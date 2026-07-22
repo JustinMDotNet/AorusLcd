@@ -28,11 +28,12 @@ internal static class Program
                 "on" => WithPanel(p => p.OpenLcd(true), "panel ON (E7 01)"),
                 "off" => WithPanel(p => p.OpenLcd(false), "panel OFF (E7 02)"),
                 "mode" => CmdMode(args),
+                "sensors" => CmdSensors(args),
                 "image" => CmdImage(args),
                 "text" => CmdText(args),
                 "gif" => CmdGif(args),
                 "carousel" => CmdCarousel(args),
-                "brightness" => CmdBrightness(args),
+                "brightness" => Fail("'brightness' was removed: 0xE1 is the sensor-dashboard command, not brightness. Use 'sensors' instead."),
                 "poweroff-mode" => WithPanel(p => p.PowerOffMode(), "SetPCPowerOffMode (FA)", "poweroff-mode"),
                 "raw" => CmdRaw(args),
                 "raw-read" => CmdRawRead(args),
@@ -103,6 +104,7 @@ internal static class Program
     {
         string file = RequireArg(args, 1, "image <file>");
         var opts = UploadOptions.Parse(args);
+        bool keepSensors = HasFlag(args, "--keep-sensors");
         var pixels = ImageContent.LoadImageLe565(file);
         var payload = Concat(Panel.Descriptor, pixels);
         var frames = ProtocolFrames.BuildUpload(payload, Panel.FramebufferStatic);
@@ -110,7 +112,11 @@ internal static class Program
         var panel = OpenPanel();
         panel.UploadContent(frames, Panel.ModeStatic, isGif: false,
             setDisplayMode: !opts.NoMode, chunkDelayMs: opts.ChunkDelayMs);
-        Console.WriteLine("done" + (opts.NoMode ? "" : " (SetMode 3)"));
+        if (!opts.NoMode && !keepSensors)
+        {
+            panel.SetDisplay(LcdDisplayElements.None, 0); // clear the sensor dashboard overlay
+        }
+        Console.WriteLine("done" + (opts.NoMode ? "" : " (SetMode 3, sensors " + (keepSensors ? "kept" : "off") + ")"));
         return 0;
     }
 
@@ -171,10 +177,46 @@ internal static class Program
         return WithPanel(p => p.SetCarousel(modes, arg), $"carousel [{string.Join(",", modes)}] arg={arg} (F3)");
     }
 
-    private static int CmdBrightness(string[] args)
+    private static int CmdSensors(string[] args)
     {
-        int value = RequireInt(args, 1, "brightness");
-        return WithPanel(p => p.SetBrightness(value), $"SetDisplay brightness {value} (E1)", "brightness");
+        if (args.Length < 2)
+        {
+            return Fail("usage: sensors off | sensors <gtemp,gclock,gusage,fan,rclock,rusage,fps,tgp> [--interval N]");
+        }
+        var (elements, interval) = ParseSensors(args);
+        return WithPanel(p => p.SetDisplay(elements, interval),
+            $"SetDisplay {elements} interval {interval} (E1)");
+    }
+
+    private static (LcdDisplayElements Elements, int Interval) ParseSensors(string[] args)
+    {
+        int interval = GetIntOption(args, "--interval", 4);
+        string spec = args[1];
+        if (spec is "off" or "none")
+        {
+            return (LcdDisplayElements.None, 0);
+        }
+        if (spec is "all")
+        {
+            return (LcdDisplayElements.All, interval);
+        }
+        var elements = LcdDisplayElements.None;
+        foreach (var token in spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            elements |= token.ToLowerInvariant() switch
+            {
+                "gtemp" or "gputemp" or "temp" => LcdDisplayElements.GpuTemp,
+                "gclock" or "gpuclock" => LcdDisplayElements.GpuClock,
+                "gusage" or "gpuusage" or "usage" => LcdDisplayElements.GpuUsage,
+                "fan" or "fanspeed" => LcdDisplayElements.FanSpeed,
+                "rclock" or "ramclock" => LcdDisplayElements.RamClock,
+                "rusage" or "ramusage" => LcdDisplayElements.RamUsage,
+                "fps" => LcdDisplayElements.Fps,
+                "tgp" => LcdDisplayElements.Tgp,
+                _ => throw new FileNotFoundException($"unknown sensor '{token}'"),
+            };
+        }
+        return (elements, interval);
     }
 
     private static int CmdRaw(string[] args)
@@ -287,11 +329,11 @@ internal static class Program
           probe                       find the GPU whose LCD controller answers at 0x61
           on | off                    turn the panel on/off
           mode <0..7>                 3=image 4=text 5=gif 6=chibi
-          image <file> [--no-mode] [--chunk-delay SEC]
+          image <file> [--keep-sensors] [--no-mode] [--chunk-delay SEC]
           text <msg> [--size N] [--color RRGGBB] [--bg RRGGBB] [--no-effect] [--no-mode]
           gif <file> [--frame-delay MS] [--no-mode]
           carousel <m,m,..> [--arg N]
-          brightness <0..100>         [experimental]
+          sensors off | sensors <gtemp,gclock,gusage,fan,rclock,rusage,fps,tgp> [--interval N]
           poweroff-mode               [experimental]
           raw "aa 01 02"              [experimental] send a raw command frame
           raw-read "eb 03" [--len N]  [experimental] send a frame then read back

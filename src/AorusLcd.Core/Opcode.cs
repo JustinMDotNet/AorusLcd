@@ -10,7 +10,7 @@ public static class Opcode
 
     public const byte OpenLcd = 0xE7;   // byte5: 1 = panel ON, 2 = panel OFF
     public const byte SetMode = 0xE5;   // byte5 = mode+1 (0..6 confirmed; 7 -> 9)
-    public const byte SetDisplay = 0xE1; // element bitmask + brightness (experimental)
+    public const byte SetDisplay = 0xE1; // dashboard sensor elements + rotation interval (E1 SetDisplay)
     public const byte SetLoop = 0xF3;   // carousel: byte5 = arg, byte6.. = (mode+1) order
     public const byte PowerOff = 0xFA;  // SetPCPowerOffMode (experimental)
     public const byte TextEffect = 0xAA; // applied after a text upload (rainbow)

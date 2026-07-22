@@ -63,10 +63,15 @@ $cli = "dotnet run --project src\AorusLcd.Cli --"
 # play an animated gif
 & $cli gif animation.gif
 
+# stop / configure the built-in sensor dashboard overlay (E1 SetDisplay)
+& $cli sensors off                             # clean image, no TGP/temp overlay
+& $cli sensors gtemp,tgp --interval 4          # show only GPU temp + TGP, rotate every 4s
+& $cli sensors all                             # show every sensor widget
+
 # panel power / display mode / carousel
 & $cli on
 & $cli off
-& $cli mode 3            # 3=image 4=text 5=gif 6=chibi
+& $cli mode 3            # 0-2=built-in stats 3=image 4=text 5=gif 6=chibi 7=carousel
 & $cli carousel 0,1,4 --arg 5
 
 # ---- RGB lighting (RGB Fusion 2) ----
@@ -80,7 +85,28 @@ $cli = "dotnet run --project src\AorusLcd.Cli --"
 ```
 
 Experimental (semantics inferred from the decompile, not fully confirmed):
-`brightness`, `poweroff-mode`, `raw "aa 01 02"`, `raw-read "eb 03" --len 8`.
+`poweroff-mode`, `raw "aa 01 02"`, `raw-read "eb 03" --len 8`.
+
+## Panel protocol notes
+
+Opcodes and layouts were confirmed by decompiling Gigabyte's `ucVga.dll`
+(`GvLcdApi`) — facts only, no vendor code is included or shipped:
+
+| Opcode | Command | Notes |
+| --- | --- | --- |
+| `E7` | OpenLcd | byte5 = 1 on / 2 off |
+| `E5` | SetMode | byte5 = mode+1; mode 7 → internal 9 |
+| `E1` | SetDisplay | 8 sensor-element flags + interval byte (the dashboard overlay) |
+| `E3` | Sensor feed | GCC's service pushes live GPU stats here every second |
+| `F3` | SetLoop | carousel: interval + (mode+1) list |
+| `F2`/`F1` | Upload | begin/header for image/text/gif frames |
+| `EB 03` | GetData | status query used by `probe` |
+
+Display modes: `0-2` built-in stat screens, `3` image, `4` text, `5` gif,
+`6` chibi, `7` carousel. The rotating TGP/temp overlay is the **E1 sensor
+dashboard** (`Display` bitmask GpuTemp=1 … Tgp=0x80), independent of the
+display mode — `sensors off` clears it, and `image` clears it by default
+(pass `--keep-sensors` to keep it).
 
 ## Projects
 

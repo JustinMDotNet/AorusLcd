@@ -36,18 +36,25 @@ public sealed class PanelController(II2cBus bus)
     public void SetMode(int mode)
         => WriteFrame(ProtocolFrames.CmdFrame(Opcode.SetMode, [(byte)((mode == 7 ? 9 : mode) + 1)]));
 
-    /// <summary>E1 SetDisplay: byte5..12 = 1 per set bit of mask, byte13 = value. Experimental.</summary>
-    public void SetBrightness(int value, int mask = 0xFF)
+    /// <summary>
+    /// E1 SetDisplay: enable/disable the panel's built-in sensor dashboard
+    /// widgets and their rotation interval. Sends one flag byte per element
+    /// (GpuTemp, GpuClock, GpuUsage, FanSpeed, RamClock, RamUsage, Fps, Tgp)
+    /// followed by the interval byte — the exact layout from ucVga.dll's
+    /// GvLcdApi.SetDisplay. Pass <see cref="LcdDisplayElements.None"/> to turn
+    /// the whole dashboard off (clean image with no overlay).
+    /// </summary>
+    public void SetDisplay(LcdDisplayElements elements, int intervalSeconds)
     {
         var tail = new byte[9];
         for (int i = 0; i < 8; i++)
         {
-            if ((mask & (1 << i)) != 0)
+            if (((uint)elements & (1u << i)) != 0)
             {
                 tail[i] = 1;
             }
         }
-        tail[8] = (byte)(value & 0xFF);
+        tail[8] = (byte)intervalSeconds;
         WriteFrame(ProtocolFrames.CmdFrame(Opcode.SetDisplay, tail));
     }
 

@@ -53,4 +53,42 @@ public class ProtocolTests
         Assert.Equal(Opcode.UploadMarker, frames[^1][0]);
         Assert.Equal(2, frames[^1][5]);
     }
+
+    [Fact]
+    public void SetDisplay_EncodesElementFlagsAndInterval()
+    {
+        var bus = new CapturingBus();
+        new PanelController(bus).SetDisplay(LcdDisplayElements.GpuTemp | LcdDisplayElements.Tgp, 4);
+        var frame = bus.LastWrite!;
+        // E1 CB 55 AC 38, then 8 element flags (GTEMP..TGP), then interval.
+        Assert.Equal(Opcode.SetDisplay, frame[0]);
+        Assert.Equal(new byte[] { 0xCB, 0x55, 0xAC, 0x38 }, frame[1..5]);
+        Assert.Equal(1, frame[5]);  // GpuTemp (bit 0)
+        Assert.Equal(0, frame[6]);  // GpuClock
+        Assert.Equal(1, frame[12]); // Tgp (bit 7)
+        Assert.Equal(4, frame[13]); // interval
+    }
+
+    [Fact]
+    public void SetDisplay_NoneTurnsEverythingOff()
+    {
+        var bus = new CapturingBus();
+        new PanelController(bus).SetDisplay(LcdDisplayElements.None, 0);
+        var frame = bus.LastWrite!;
+        Assert.Equal(Opcode.SetDisplay, frame[0]);
+        Assert.All(frame[5..14], b => Assert.Equal(0, b));
+    }
+
+    private sealed class CapturingBus : II2cBus
+    {
+        public byte[]? LastWrite { get; private set; }
+
+        public void Write(ReadOnlySpan<byte> data) => LastWrite = data.ToArray();
+
+        public byte[] Read(int count) => new byte[count];
+
+        public void Dispose()
+        {
+        }
+    }
 }
