@@ -1,0 +1,303 @@
+using System.Runtime.Versioning;
+using AorusLcd.Core;
+using AorusLcd.Core.Nvapi;
+
+namespace AorusLcd.Cli;
+
+/// <summary>
+/// Command-line front end mirroring the Linux <c>aorus_lcd.py</c> subcommands,
+/// but driving the panel over NVAPI on Windows.
+/// </summary>
+[SupportedOSPlatform("windows")]
+internal static class Program
+{
+    private static int Main(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            PrintUsage();
+            return 2;
+        }
+
+        try
+        {
+            return args[0] switch
+            {
+                "selftest" => SelfTest.Run() ? 1 : 0,
+                "probe" => CmdProbe(),
+                "on" => WithPanel(p => p.OpenLcd(true), "panel ON (E7 01)"),
+                "off" => WithPanel(p => p.OpenLcd(false), "panel OFF (E7 02)"),
+                "mode" => CmdMode(args),
+                "image" => CmdImage(args),
+                "text" => CmdText(args),
+                "gif" => CmdGif(args),
+                "carousel" => CmdCarousel(args),
+                "brightness" => CmdBrightness(args),
+                "poweroff-mode" => WithPanel(p => p.PowerOffMode(), "SetPCPowerOffMode (FA)", "poweroff-mode"),
+                "raw" => CmdRaw(args),
+                "raw-read" => CmdRawRead(args),
+                "rgb" => RgbCommand.Run(args[1..]),
+                "-h" or "--help" or "help" => PrintUsageReturn(),
+                _ => Fail($"unknown command '{args[0]}'"),
+            };
+        }
+        catch (NvApiException e)
+        {
+            return Fail(e.Message);
+        }
+        catch (FileNotFoundException e)
+        {
+            return Fail(e.Message);
+        }
+    }
+
+    private static PanelController OpenPanel()
+    {
+        var located = NvApiPanelLocator.Locate();
+        if (located is null)
+        {
+            throw new NvApiException("locate Aorus LCD (no GPU answered EB 03 at 0x61 on port 1)", -1);
+        }
+        Console.WriteLine($"using {located.Value.GpuName} (NVAPI internal bus, port 1)");
+        return new PanelController(located.Value.Bus);
+    }
+
+    private static int WithPanel(Action<PanelController> action, string message, string? experimental = null)
+    {
+        if (experimental is not null)
+        {
+            Experimental(experimental);
+        }
+        var panel = OpenPanel();
+        action(panel);
+        Console.WriteLine(message);
+        return 0;
+    }
+
+    private static int CmdProbe()
+    {
+        bool any = false;
+        foreach (var (name, responds, detail) in NvApiPanelLocator.Survey())
+        {
+            Console.WriteLine($"{name} @0x61 port 1: {detail}");
+            any |= responds;
+        }
+        if (!any)
+        {
+            Console.WriteLine("no GPU answered the LCD controller at 0x61 on port 1.");
+        }
+        return any ? 0 : 1;
+    }
+
+    private static int CmdMode(string[] args)
+    {
+        int mode = RequireInt(args, 1, "mode");
+        if (mode is < 0 or > 7)
+        {
+            return Fail("mode must be 0..7");
+        }
+        return WithPanel(p => p.SetMode(mode), $"SetMode {mode}");
+    }
+
+    private static int CmdImage(string[] args)
+    {
+        string file = RequireArg(args, 1, "image <file>");
+        var opts = UploadOptions.Parse(args);
+        var pixels = ImageContent.LoadImageLe565(file);
+        var payload = Concat(Panel.Descriptor, pixels);
+        var frames = ProtocolFrames.BuildUpload(payload, Panel.FramebufferStatic);
+        Console.WriteLine($"uploading {file} ({frames.Count} i2c writes) ...");
+        var panel = OpenPanel();
+        panel.UploadContent(frames, Panel.ModeStatic, isGif: false,
+            setDisplayMode: !opts.NoMode, chunkDelayMs: opts.ChunkDelayMs);
+        Console.WriteLine("done" + (opts.NoMode ? "" : " (SetMode 3)"));
+        return 0;
+    }
+
+    private static int CmdText(string[] args)
+    {
+        string text = RequireArg(args, 1, "text <message>");
+        var opts = UploadOptions.Parse(args);
+        int size = GetIntOption(args, "--size", 28);
+        var fg = ParseColor(GetOption(args, "--color", "8b8d8b"));
+        var bg = ParseColor(GetOption(args, "--bg", "000000"));
+        bool noEffect = HasFlag(args, "--no-effect");
+
+        var pixels = ImageContent.RenderTextLe565(text, size, fg, bg);
+        var payload = Concat(Panel.Descriptor, pixels);
+        var frames = ProtocolFrames.BuildUpload(payload, Panel.FramebufferText);
+        Console.WriteLine($"uploading text \"{text}\" ({frames.Count} i2c writes) ...");
+        var panel = OpenPanel();
+        panel.UploadContent(frames, Panel.ModeText, isGif: false,
+            setDisplayMode: !opts.NoMode, chunkDelayMs: opts.ChunkDelayMs);
+        if (!opts.NoMode && !noEffect)
+        {
+            panel.TextEffect();
+            Console.WriteLine("text effect applied (AA)");
+        }
+        Console.WriteLine("done");
+        return 0;
+    }
+
+    private static int CmdGif(string[] args)
+    {
+        string file = RequireArg(args, 1, "gif <file>");
+        var opts = UploadOptions.Parse(args);
+        int? frameDelay = TryGetIntOption(args, "--frame-delay");
+
+        var (le565Frames, delays) = ImageContent.GifToLe565Frames(file);
+        var (payload, count, delayMs) = GifPayload.Build(le565Frames, delays, frameDelay);
+        var frames = ProtocolFrames.BuildUpload(payload, Panel.FramebufferGif,
+            flag: 2, nframes: (ushort)count, delay: delayMs, mode: 2);
+        Console.WriteLine($"uploading {file}: {count} frames, {frames.Count} i2c writes ...");
+        var panel = OpenPanel();
+        panel.UploadContent(frames, Panel.ModeGif, isGif: true,
+            setDisplayMode: !opts.NoMode, chunkDelayMs: opts.ChunkDelayMs);
+        Console.WriteLine("done");
+        return 0;
+    }
+
+    private static int CmdCarousel(string[] args)
+    {
+        string list = RequireArg(args, 1, "carousel <modes>");
+        var modes = list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(int.Parse).ToList();
+        var bad = modes.Where(m => m is < 0 or > 6).ToList();
+        if (bad.Count > 0)
+        {
+            return Fail($"carousel modes must be 0..6, got {string.Join(",", bad)}");
+        }
+        int arg = GetIntOption(args, "--arg", 0);
+        return WithPanel(p => p.SetCarousel(modes, arg), $"carousel [{string.Join(",", modes)}] arg={arg} (F3)");
+    }
+
+    private static int CmdBrightness(string[] args)
+    {
+        int value = RequireInt(args, 1, "brightness");
+        return WithPanel(p => p.SetBrightness(value), $"SetDisplay brightness {value} (E1)", "brightness");
+    }
+
+    private static int CmdRaw(string[] args)
+    {
+        Experimental("raw");
+        var b = ParseHexBytes(RequireArg(args, 1, "raw <hex bytes>"));
+        return WithPanel(p => p.WriteFrame(ProtocolFrames.CmdFrame(b[0], b[1..])),
+            $"sent 0x{b[0]:x2} params {(b.Length > 1 ? Convert.ToHexString(b[1..]) : "(none)")}");
+    }
+
+    private static int CmdRawRead(string[] args)
+    {
+        Experimental("raw-read");
+        var b = ParseHexBytes(RequireArg(args, 1, "raw-read <hex bytes>"));
+        int len = GetIntOption(args, "--len", 8);
+        var panel = OpenPanel();
+        var r = panel.ReadCommand(b[0], b[1..], len);
+        Console.WriteLine($"read 0x{b[0]:x2} {Convert.ToHexString(b[1..])} -> {Convert.ToHexString(r)}");
+        return 0;
+    }
+
+    // ---- argument helpers --------------------------------------------------
+
+    private static string RequireArg(string[] args, int index, string usage)
+    {
+        if (index >= args.Length || args[index].StartsWith("--"))
+        {
+            throw new FileNotFoundException($"usage: {usage}");
+        }
+        return args[index];
+    }
+
+    private static int RequireInt(string[] args, int index, string name)
+    {
+        if (index >= args.Length || !int.TryParse(args[index], out int v))
+        {
+            throw new FileNotFoundException($"{name}: expected an integer argument");
+        }
+        return v;
+    }
+
+    private static bool HasFlag(string[] args, string flag) => Array.IndexOf(args, flag) >= 0;
+
+    private static string? GetOption(string[] args, string name)
+    {
+        int i = Array.IndexOf(args, name);
+        return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
+    }
+
+    private static string GetOption(string[] args, string name, string fallback)
+        => GetOption(args, name) ?? fallback;
+
+    private static int GetIntOption(string[] args, string name, int fallback)
+        => TryGetIntOption(args, name) ?? fallback;
+
+    private static int? TryGetIntOption(string[] args, string name)
+        => int.TryParse(GetOption(args, name), out int v) ? v : null;
+
+    private static (byte R, byte G, byte B) ParseColor(string s)
+    {
+        s = s.TrimStart('#');
+        return (Convert.ToByte(s[..2], 16), Convert.ToByte(s.Substring(2, 2), 16), Convert.ToByte(s.Substring(4, 2), 16));
+    }
+
+    private static byte[] ParseHexBytes(string s)
+        => s.Replace(",", " ").Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => Convert.ToByte(x, 16)).ToArray();
+
+    private static byte[] Concat(byte[] a, byte[] b)
+    {
+        var r = new byte[a.Length + b.Length];
+        a.CopyTo(r, 0);
+        b.CopyTo(r, a.Length);
+        return r;
+    }
+
+    private static void Experimental(string what)
+        => Console.WriteLine($"note: '{what}' is EXPERIMENTAL — semantics inferred from the decompile, not fully hardware-confirmed.");
+
+    private static int Fail(string message)
+    {
+        Console.Error.WriteLine(message);
+        return 1;
+    }
+
+    private static int PrintUsageReturn()
+    {
+        PrintUsage();
+        return 0;
+    }
+
+    private readonly record struct UploadOptions(bool NoMode, int ChunkDelayMs)
+    {
+        public static UploadOptions Parse(string[] args)
+        {
+            bool noMode = Array.IndexOf(args, "--no-mode") >= 0;
+            int i = Array.IndexOf(args, "--chunk-delay");
+            int delay = i >= 0 && i + 1 < args.Length && double.TryParse(args[i + 1], out double sec)
+                ? (int)Math.Round(sec * 1000)
+                : PanelController.DefaultChunkDelayMs;
+            return new UploadOptions(noMode, delay);
+        }
+    }
+
+    private static void PrintUsage() => Console.WriteLine(
+        """
+        AorusLcd — control the Aorus Master RTX 5090 LCD Edge View + RGB (no GCC).
+
+        LCD commands:
+          probe                       find the GPU whose LCD controller answers at 0x61
+          on | off                    turn the panel on/off
+          mode <0..7>                 3=image 4=text 5=gif 6=chibi
+          image <file> [--no-mode] [--chunk-delay SEC]
+          text <msg> [--size N] [--color RRGGBB] [--bg RRGGBB] [--no-effect] [--no-mode]
+          gif <file> [--frame-delay MS] [--no-mode]
+          carousel <m,m,..> [--arg N]
+          brightness <0..100>         [experimental]
+          poweroff-mode               [experimental]
+          raw "aa 01 02"              [experimental] send a raw command frame
+          raw-read "eb 03" [--len N]  [experimental] send a frame then read back
+          selftest                    run encoder self-checks (no hardware)
+
+        RGB commands:
+          rgb ...                     run 'rgb' with no args for RGB help
+        """);
+}
