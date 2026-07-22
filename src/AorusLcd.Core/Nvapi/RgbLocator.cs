@@ -4,64 +4,72 @@ using AorusLcd.Core.Rgb;
 namespace AorusLcd.Core.Nvapi;
 
 /// <summary>
-/// Locates the Aorus GPU RGB controller by scanning candidate I2C addresses on
-/// GPU port 1. Prefers an address returning the RGB Fusion 2 <c>0xAB</c>
-/// handshake; otherwise falls back to an address that ACKs the query write
-/// (the RTX 5090 Master answers writes at 0x75 but does not reply to reads).
+/// Locates the Aorus GPU RGB controller. To avoid writing to unrelated devices,
+/// discovery is restricted to the GPU already verified as the Aorus card (its
+/// LCD controller answers the <c>EB 03</c> status query at 0x61) and to the two
+/// documented RGB addresses (0x71, or 0x75 on the RTX 5090 Master). The 5090
+/// Master RGB controller is write-only, so presence is detected by a write-ACK
+/// of the harmless <c>0xAB</c> query rather than a read that would wedge the bus.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public static class RgbLocator
 {
-    private static readonly byte[] CandidateAddresses = [0x71, 0x72, 0x73, 0x74, 0x75];
+    private const byte Port = 1;
+    private static readonly byte[] CandidateAddresses = [0x71, 0x75];
 
-    /// <summary>Find the best GPU/address for RGB control, or null if none respond.</summary>
-    public static (RgbFusion2Controller Controller, string GpuName, byte Address, bool Handshake)? Locate()
+    /// <summary>Find the RGB controller on the verified Aorus GPU, or null.</summary>
+    public static (RgbFusion2Controller Controller, string GpuName, byte Address)? Locate()
     {
-        (IntPtr Gpu, string Name, byte Address)? writeOnly = null;
-
-        foreach (var gpu in NvApi.EnumPhysicalGpus())
+        foreach (var gpu in AorusGpus())
         {
-            string name = NvApi.GetFullName(gpu);
             foreach (byte addr in CandidateAddresses)
             {
-                var (present, handshake, _) = Probe(gpu, addr);
-                if (handshake)
+                if (new RgbFusion2Controller(new NvApiI2cBus(gpu, addr, Port)).Detect().Present)
                 {
-                    return (new RgbFusion2Controller(new NvApiI2cBus(gpu, addr, 1)), name, addr, true);
-                }
-                if (present)
-                {
-                    writeOnly ??= (gpu, name, addr);
+                    return (new RgbFusion2Controller(new NvApiI2cBus(gpu, addr, Port)), NvApi.GetFullName(gpu), addr);
                 }
             }
-        }
-
-        if (writeOnly is { } w)
-        {
-            return (new RgbFusion2Controller(new NvApiI2cBus(w.Gpu, w.Address, 1)), w.Name, w.Address, false);
         }
         return null;
     }
 
-    /// <summary>Describe every candidate address probe for diagnostics.</summary>
-    public static IEnumerable<(string GpuName, byte Address, bool Present, bool Handshake, string Detail)> Survey()
+    /// <summary>Describe candidate address probes on verified Aorus GPUs.</summary>
+    public static IEnumerable<(string GpuName, byte Address, bool Present, string Detail)> Survey()
     {
-        foreach (var gpu in NvApi.EnumPhysicalGpus())
+        foreach (var gpu in AorusGpus())
         {
             string name = NvApi.GetFullName(gpu);
             foreach (byte addr in CandidateAddresses)
             {
-                var (present, handshake, response) = Probe(gpu, addr);
-                string detail = handshake
-                    ? $"RGB Fusion 2 handshake (response {Convert.ToHexString(response)})"
-                    : present
-                        ? "write ACK (no read-back) — usable for control"
-                        : "no response";
-                yield return (name, addr, present, handshake, detail);
+                bool present = new RgbFusion2Controller(new NvApiI2cBus(gpu, addr, Port)).Detect().Present;
+                yield return (name, addr, present,
+                    present ? "write ACK — usable for control" : "no response");
             }
         }
     }
 
-    private static (bool Present, bool Handshake, byte[] Response) Probe(IntPtr gpu, byte addr)
-        => new RgbFusion2Controller(new NvApiI2cBus(gpu, addr, port: 1)).Detect();
+    /// <summary>
+    /// GPUs confirmed to be the Aorus LCD card: the LCD controller at 0x61
+    /// answers its status query. This gates RGB writes to the correct card.
+    /// </summary>
+    private static IEnumerable<IntPtr> AorusGpus()
+    {
+        foreach (var gpu in NvApi.EnumPhysicalGpus())
+        {
+            bool isAorus;
+            try
+            {
+                new PanelController(new NvApiI2cBus(gpu, address: 0x61, port: Port)).Probe();
+                isAorus = true;
+            }
+            catch (NvApiException)
+            {
+                isAorus = false;
+            }
+            if (isAorus)
+            {
+                yield return gpu;
+            }
+        }
+    }
 }

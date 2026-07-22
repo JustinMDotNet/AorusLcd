@@ -24,7 +24,6 @@ internal static class RgbCommand
             return args[0] switch
             {
                 "detect" => Detect(),
-                "scan" => Scan(),
                 "static" => Static(args),
                 "off" => Simple(c => c.Off(), "RGB off"),
                 "breathing" or "pulse" => Effect(args, RgbMode.Breathing),
@@ -42,27 +41,10 @@ internal static class RgbCommand
         }
     }
 
-    private static int Scan()
-    {
-        // A representative RGB Fusion 2 "mode" packet (static, brightness max).
-        byte[] data = [0x88, 0x01, 0x02, 0x63, 0x00, 0x01, 0x00, 0x00];
-        byte[] addresses = [0x71, 0x75];
-        Console.WriteLine("scanning ports 0-7 x {raw,register} at 0x71/0x75 (status 0 = OK):");
-        foreach (var r in NvApiI2cScan.Sweep(addresses, data))
-        {
-            if (r.Ok)
-            {
-                Console.WriteLine($"  OK   gpu{r.GpuIndex} port {r.Port} 0x{r.Address:X2} {(r.WithRegister ? "register" : "raw")}");
-            }
-        }
-        Console.WriteLine("scan complete (only OK results shown).");
-        return 0;
-    }
-
     private static int Detect()
     {
         bool any = false;
-        foreach (var (name, addr, present, handshake, detail) in RgbLocator.Survey())
+        foreach (var (name, addr, present, detail) in RgbLocator.Survey())
         {
             if (present)
             {
@@ -72,7 +54,7 @@ internal static class RgbCommand
         }
         if (!any)
         {
-            Console.WriteLine("no RGB controller found (scanned 0x71-0x75 on port 1).");
+            Console.WriteLine("no RGB controller found (scanned 0x71/0x75 on the Aorus GPU, port 1).");
         }
         return any ? 0 : 1;
     }
@@ -122,11 +104,11 @@ internal static class RgbCommand
         var located = RgbLocator.Locate();
         if (located is null)
         {
-            throw new NvApiException("locate Aorus RGB (no ACK on 0x71-0x75 port 1)", -1);
+            throw new NvApiException("locate Aorus RGB (no ACK on 0x71/0x75, port 1)", -1);
         }
-        if (!located.Value.Handshake)
+        if (located.Value.Address == 0x75)
         {
-            Console.WriteLine($"note: 0x{located.Value.Address:X2} ACKs writes but gives no read-back; controlling write-only.");
+            Console.WriteLine("note: RGB controller at 0x75 is write-only (no read-back); controlling blind.");
         }
         return (located.Value.Controller, located.Value.GpuName, located.Value.Address);
     }
