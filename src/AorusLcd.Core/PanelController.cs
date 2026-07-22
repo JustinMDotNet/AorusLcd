@@ -78,6 +78,28 @@ public sealed class PanelController(II2cBus bus)
     public void PowerOffMode() => WriteFrame(ProtocolFrames.CmdFrame(Opcode.PowerOff));
 
     /// <summary>
+    /// E3 sensor feed: push live GPU values the panel's dashboard displays and
+    /// rotates through. Layout from AorusLcdService: temp, GPU clock(2),
+    /// usage, fan(2), RAM clock(2), RAM usage, FPS(2), TGP(2) — 16-bit fields
+    /// big-endian. Must be sent continuously (≈1 Hz) for the widgets to update.
+    /// </summary>
+    public void SendSensorFeed(SensorSample s)
+    {
+        byte[] tail =
+        [
+            Clamp8(s.GpuTempC),
+            High(s.GpuClockMhz), Low(s.GpuClockMhz),
+            Clamp8(s.GpuUsagePercent),
+            High(s.FanSpeed), Low(s.FanSpeed),
+            High(s.RamClockMhz), Low(s.RamClockMhz),
+            Clamp8(s.RamUsagePercent),
+            High(s.Fps), Low(s.Fps),
+            High(s.TgpWatts), Low(s.TgpWatts),
+        ];
+        WriteFrame(ProtocolFrames.CmdFrame(Opcode.SensorFeed, tail));
+    }
+
+    /// <summary>
     /// EA SetImageTpl: configure an overlay template (color + image/data
     /// positions) for image/gif/pet content. Layout from ucVga.dll's
     /// GvLcdApi.SetImageTpl: type, RGB, image X/Y and data X/Y as 16-bit
@@ -178,6 +200,8 @@ public sealed class PanelController(II2cBus bus)
     private static byte High(int v) => (byte)((v >> 8) & 0xFF);
 
     private static byte Low(int v) => (byte)(v & 0xFF);
+
+    private static byte Clamp8(int v) => (byte)Math.Clamp(v, 0, 255);
 
     /// <summary>
     /// Write the upload frames with the pacing the panel firmware needs.

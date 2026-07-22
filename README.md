@@ -1,16 +1,32 @@
 # AorusLcd
 
-A lightweight Windows/.NET 10 controller for the **Gigabyte Aorus Master RTX 5090**
+A lightweight, open-source controller for the **Gigabyte Aorus Master RTX 5090**
 "LCD Edge View" panel **and its RGB Fusion 2 lighting** — a low-overhead
-replacement for Gigabyte Control Center's LCD/RGB features.
+replacement for Gigabyte Control Center's LCD/RGB features, with both a **CLI**
+and a **cross-platform GUI**.
 
-This is a Windows port of the Linux tool
+This started as a Windows port of the Linux tool
 [`albancreton/aorus-master-linux`](https://github.com/albancreton/aorus-master-linux),
 whose reverse-engineered `0x61` LCD protocol it reproduces byte-for-byte, plus
 the RGB Fusion 2 GPU protocol from
-[OpenRGB](https://github.com/CalcProgrammer1/OpenRGB). It is **alpha, community
-software**, tested on a single card (Aorus Master RTX 5090). Not affiliated with
-or endorsed by Gigabyte or NVIDIA.
+[OpenRGB](https://github.com/CalcProgrammer1/OpenRGB). The full LCD command set
+was recovered by decompiling Gigabyte's `ucVga.dll` (facts only — no vendor code
+is shipped). It is **alpha, community software**, tested on a single card (Aorus
+Master RTX 5090). Not affiliated with or endorsed by Gigabyte or NVIDIA.
+
+## GUI
+
+`AorusLcd.Gui` is an [Avalonia](https://avaloniaui.net) desktop app (Windows /
+Linux / macOS) with three tabs — **Device**, **LCD Panel** (image, text, GIF,
+built-in screens, carousel, sensor dashboard), and **RGB Lighting**. It
+minimizes to the **system tray** and runs a lightweight background **sensor feed**
+(via NVML) so the panel's live GPU widgets (temp, TGP, clocks…) update without
+Gigabyte's service running. Hardware control currently requires Windows (NVAPI);
+the UI and imaging are cross-platform, with a Linux i2c-dev backend planned.
+
+```powershell
+dotnet run --project src\AorusLcd.Gui
+```
 
 ## How it works
 

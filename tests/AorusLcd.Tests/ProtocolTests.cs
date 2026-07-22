@@ -89,6 +89,34 @@ public class ProtocolTests
     }
 
     [Fact]
+    public void SendSensorFeed_EncodesE3PacketBigEndian()
+    {
+        var bus = new CapturingBus();
+        new PanelController(bus).SendSensorFeed(new SensorSample
+        {
+            GpuTempC = 48,
+            GpuClockMhz = 0x0322,   // 802
+            GpuUsagePercent = 5,
+            FanSpeed = 0x0102,
+            RamClockMhz = 0x0405,
+            RamUsagePercent = 9,
+            Fps = 0x0060,
+            TgpWatts = 0x0037,      // 55
+        });
+        var f = bus.LastWrite!;
+        Assert.Equal(Opcode.SensorFeed, f[0]);
+        Assert.Equal(new byte[] { 0xCB, 0x55, 0xAC, 0x38 }, f[1..5]);
+        Assert.Equal(48, f[5]);
+        Assert.Equal(new byte[] { 0x03, 0x22 }, f[6..8]);   // GPU clock big-endian
+        Assert.Equal(5, f[8]);
+        Assert.Equal(new byte[] { 0x01, 0x02 }, f[9..11]);  // fan
+        Assert.Equal(new byte[] { 0x04, 0x05 }, f[11..13]); // RAM clock
+        Assert.Equal(9, f[13]);
+        Assert.Equal(new byte[] { 0x00, 0x60 }, f[14..16]); // FPS
+        Assert.Equal(new byte[] { 0x00, 0x37 }, f[16..18]); // TGP
+    }
+
+    [Fact]
     public void SetImageTemplate_EncodesColorAndPositions()
     {
         var bus = new CapturingBus();
