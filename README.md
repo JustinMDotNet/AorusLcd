@@ -19,13 +19,37 @@ Master RTX 5090). Not affiliated with or endorsed by Gigabyte or NVIDIA.
 `AorusLcd.Gui` is an [Avalonia](https://avaloniaui.net) desktop app (Windows /
 Linux / macOS) with three tabs — **Device**, **LCD Panel** (image, text, GIF,
 built-in screens, carousel, sensor dashboard), and **RGB Lighting**. It
-minimizes to the **system tray** and runs a lightweight background **sensor feed**
-(via NVML) so the panel's live GPU widgets (temp, TGP, clocks…) update without
-Gigabyte's service running. Hardware control currently requires Windows (NVAPI);
-the UI and imaging are cross-platform, with a Linux i2c-dev backend planned.
+minimizes to the **system tray**, can **start with Windows** (launching straight
+to the tray), and runs a lightweight background **sensor feed** (via NVML) so the
+panel's live GPU widgets (temp, TGP, clocks…) update without Gigabyte's service
+running. Hardware control currently requires Windows (NVAPI); the UI and imaging
+are cross-platform, with a Linux i2c-dev backend planned.
 
 ```powershell
 dotnet run --project src\AorusLcd.Gui
+```
+
+### Do I need to leave it running?
+
+No — for a static image, text, GIF, RGB color/effect, or the built-in screens,
+set it once (tick **Save to panel** to persist across reboots) and quit; the
+panel and RGB controller keep displaying on their own. The **only** exception is
+the **live sensor dashboard**: those widgets are just numbers the panel shows, so
+something must keep pushing the sensor feed (~1 Hz) or they freeze — that's what
+the tray app + "Start with Windows" are for. Use them only if you rely on the
+live sensor widgets.
+
+### Building a distributable
+
+```powershell
+# self-contained single exe (~99 MB, no prerequisites)
+dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --self-contained ^
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
+  -p:DebugType=none
+
+# framework-dependent (~29 MB, needs the .NET 10 runtime)
+dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --no-self-contained ^
+  -p:PublishSingleFile=true -p:DebugType=none
 ```
 
 ## How it works

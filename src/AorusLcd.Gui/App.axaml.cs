@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using AorusLcd.Gui.Services;
 using AorusLcd.Gui.ViewModels;
 using AorusLcd.Gui.Views;
 
@@ -13,6 +14,7 @@ public partial class App : Application
     private MainWindow? _window;
     private MainViewModel? _viewModel;
     private bool _exiting;
+    private bool _startMinimized;
 
     public override void Initialize()
     {
@@ -29,11 +31,32 @@ public partial class App : Application
             _viewModel = new MainViewModel();
             _window = new MainWindow { DataContext = _viewModel };
             _window.Closing += OnWindowClosing;
+
+            // The classic desktop lifetime always shows MainWindow. For --minimized
+            // autostart we still assign it (so it is fully initialized and the tray
+            // "Show" works), but start it minimized + off the taskbar and hide it the
+            // moment it opens, so it goes straight to the tray without a visible flash.
+            _startMinimized = desktop.Args?.Contains(StartupService.MinimizedArg) == true;
+            if (_startMinimized)
+            {
+                _window.WindowState = WindowState.Minimized;
+                _window.ShowInTaskbar = false;
+                _window.Opened += OnFirstOpenHideToTray;
+            }
             desktop.MainWindow = _window;
-            _window.Show();
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private void OnFirstOpenHideToTray(object? sender, EventArgs e)
+    {
+        if (_window is null)
+        {
+            return;
+        }
+        _window.Opened -= OnFirstOpenHideToTray;
+        _window.Hide();
     }
 
     private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
@@ -67,6 +90,7 @@ public partial class App : Application
         {
             return;
         }
+        _window.ShowInTaskbar = true;
         _window.Show();
         _window.WindowState = WindowState.Normal;
         _window.Activate();

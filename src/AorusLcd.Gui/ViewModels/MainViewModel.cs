@@ -32,6 +32,7 @@ public partial class MainViewModel : ViewModelBase
         SelectedRgbMode = RgbModes[0];
         _feed = new SensorFeedService(_hw);
         _feed.Error += msg => Dispatcher.UIThread.Post(() => StatusMessage = $"Sensor feed: {msg}");
+        StartWithWindows = StartupService.IsEnabled(); // reflect current registry state
         StatusMessage = _hw.IsSupportedPlatform
             ? "Ready. Click Refresh to connect to the panel."
             : "Hardware control needs Windows (NVAPI) for now; UI is cross-platform.";
@@ -56,6 +57,21 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial string CurrentMode { get; set; } = "—";
+
+    /// <summary>Whether the OS supports launching the app at login (Windows only for now).</summary>
+    public bool StartupSupported => StartupService.IsSupported;
+
+    [ObservableProperty]
+    public partial bool StartWithWindows { get; set; }
+
+    partial void OnStartWithWindowsChanged(bool value)
+    {
+        if (StartupService.IsEnabled() != value)
+        {
+            StartupService.SetEnabled(value);
+            StatusMessage = value ? "AorusLcd will start with Windows." : "Autostart disabled.";
+        }
+    }
 
     // ---- image -------------------------------------------------------------
 

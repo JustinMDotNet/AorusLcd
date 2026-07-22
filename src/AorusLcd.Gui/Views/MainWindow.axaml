@@ -91,6 +91,14 @@
                         </Border>
                         <Border Classes="card">
                             <StackPanel>
+                                <TextBlock Classes="h2" Text="Startup" />
+                                <CheckBox Content="Start with Windows (launch minimized to tray)"
+                                          IsChecked="{Binding StartWithWindows}"
+                                          IsEnabled="{Binding StartupSupported}" />
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="card">
+                            <StackPanel>
                                 <TextBlock Classes="h2" Text="About" />
                                 <TextBlock Classes="label" TextWrapping="Wrap"
                                            Text="AorusLcd — open-source control for the Aorus Master LCD Edge View and RGB Fusion 2 lighting. Click Refresh (top-right) to connect. Closing the window minimizes to the system tray; the sensor feed keeps running in the background." />
