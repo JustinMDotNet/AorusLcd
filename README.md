@@ -2,8 +2,8 @@
 
 A lightweight, open-source controller for the **Gigabyte Aorus Master RTX 5090**
 "LCD Edge View" panel **and its RGB Fusion 2 lighting** — a low-overhead
-replacement for Gigabyte Control Center's LCD/RGB features, with both a **CLI**
-and a **cross-platform GUI**.
+replacement for Gigabyte Control Center's LCD/RGB features, with a
+**cross-platform GUI** and a lightweight background **Windows service**.
 
 This started as a Windows port of the Linux tool
 [`albancreton/aorus-master-linux`](https://github.com/albancreton/aorus-master-linux),
@@ -19,11 +19,14 @@ Master RTX 5090). Not affiliated with or endorsed by Gigabyte or NVIDIA.
 `AorusLcd.Gui` is an [Avalonia](https://avaloniaui.net) desktop app (Windows /
 Linux / macOS) with three tabs — **Device**, **LCD Panel** (image, text, GIF,
 built-in screens, carousel, sensor dashboard), and **RGB Lighting**. It
-minimizes to the **system tray**, can **start with Windows** (launching straight
-to the tray), and runs a lightweight background **sensor feed** (via NVML) so the
-panel's live GPU widgets (temp, TGP, clocks…) update without Gigabyte's service
-running. Hardware control currently requires Windows (NVAPI); the UI and imaging
-are cross-platform, with a Linux i2c-dev backend planned.
+minimizes to the **system tray** and can **start with Windows** (launching
+straight to the tray). The panel's live GPU widgets (temp, TGP, clocks…) are
+driven by a lightweight background **Windows service** (`AorusLcdFeed`, a
+self-contained NativeAOT ~5 MB exe) that reads GPU sensors via NVML and pushes
+the feed even when the GUI is closed — the GUI just installs/manages the service
+and writes the shared dashboard config it consumes. Hardware control currently
+requires Windows (NVAPI); the UI and imaging are cross-platform, with a Linux
+i2c-dev backend planned.
 
 ```powershell
 dotnet run --project src\AorusLcd.Gui
@@ -35,14 +38,24 @@ No — for a static image, text, GIF, RGB color/effect, or the built-in screens,
 set it once (tick **Save to panel** to persist across reboots) and quit; the
 panel and RGB controller keep displaying on their own. The **only** exception is
 the **live sensor dashboard**: those widgets are just numbers the panel shows, so
-something must keep pushing the sensor feed (~1 Hz) or they freeze — that's what
-the tray app + "Start with Windows" are for. Use them only if you rely on the
-live sensor widgets.
+something must keep pushing the sensor feed (~1 Hz) or they freeze. That job
+belongs to the background **`AorusLcdFeed` service**, not the GUI — install it
+once from the **Device** tab and the dashboard keeps updating with the GUI
+closed and no user logged in. The GUI and the service coordinate on the shared
+I2C bus through a cross-process lock, so an image upload never collides with a
+sensor frame.
 
 ### Building a distributable
 
+Publish the service first so the GUI can bundle it for the in-app installer
+(NativeAOT needs an MSVC toolchain / `vcvars64`):
+
 ```powershell
-# self-contained single exe (~99 MB, no prerequisites)
+# NativeAOT background service (~5 MB self-contained native exe)
+dotnet publish src\AorusLcd.Service -c Release -r win-x64
+
+# GUI — self-contained single exe (~99 MB, no prerequisites);
+# picks up the published service exe next to it automatically
 dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --self-contained ^
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
   -p:DebugType=none
@@ -82,59 +95,27 @@ read-back, so it never writes to a bus that does not answer.
 
 ```powershell
 dotnet build
-dotnet test                       # 11 encoder/protocol byte-parity tests
-dotnet run --project src\AorusLcd.Cli -- selftest   # same checks, no hardware
+dotnet test                       # encoder/protocol byte-parity tests
 ```
 
 ## Usage
 
+Launch the GUI and drive everything from its three tabs:
+
 ```powershell
-$cli = "dotnet run --project src\AorusLcd.Cli --"
-
-# find the GPU whose LCD controller answers at 0x61
-& $cli probe
-
-# show a static image (resized to 320x170)
-& $cli image wallpaper.png
-
-# render text
-& $cli text "Hello" --color ff8800 --bg 000000 --size 32
-
-# play an animated gif
-& $cli gif animation.gif
-
-# read the panel's current state (firmware, mode, sensors, carousel)
-& $cli status
-
-# persist the current config to the panel so it survives reboot
-& $cli save
-& $cli image wallpaper.png --save        # upload + persist in one step
-
-# stop / configure the built-in sensor dashboard overlay (E1 SetDisplay)
-& $cli sensors off                             # clean image, no TGP/temp overlay
-& $cli sensors gtemp,tgp --interval 4          # show only GPU temp + TGP, rotate every 4s
-& $cli sensors all                             # show every sensor widget
-
-# panel power / display mode / carousel
-& $cli on
-& $cli off
-& $cli mode 3            # 0-2=built-in stats 3=image 4=text 5=gif 6=chibi 7=carousel
-& $cli carousel 0,1,4 --arg 5
-
-# ---- RGB lighting (RGB Fusion 2) ----
-& $cli rgb detect                              # find the RGB controller (0x71-0x75)
-& $cli rgb static FF6600 --brightness 100      # solid color
-& $cli rgb breathing 0000FF --speed 2          # pulsing effect
-& $cli rgb cycle --speed 3                      # rainbow color cycle
-& $cli rgb flash FF0000 --speed 4
-& $cli rgb wave --speed 2
-& $cli rgb off
+dotnet run --project src\AorusLcd.Gui
 ```
 
-Experimental (semantics inferred from the decompile, not fully confirmed):
-`poweroff-mode`, `raw "aa 01 02"`, `raw-read "eb 03" --len 8`.
+- **Device** — connect (Refresh), panel on/off, save-to-NVRAM, "Start with
+  Windows", and install/start/stop the background **`AorusLcdFeed`** service.
+- **LCD Panel** — send a static image, rendered text, or an animated GIF; pick a
+  built-in screen; configure the carousel; and choose which sensor widgets the
+  dashboard shows. Tick **Save to panel** to persist across reboots.
+- **RGB Lighting** — static color or an effect (breathing, color cycle, flash,
+  wave) with brightness/speed.
 
-## Panel protocol notes
+The live sensor dashboard is pushed by the background service, so enable it once
+(Device tab → Install) and the widgets keep updating with the GUI closed.
 
 Opcodes and layouts were confirmed by decompiling Gigabyte's `ucVga.dll`
 (`GvLcdApi`) — facts only, no vendor code is included or shipped:
@@ -166,8 +147,9 @@ display mode — `sensors off` clears it, and `image` clears it by default
 
 | Project | Purpose |
 | --- | --- |
-| `src/AorusLcd.Core` | Protocol frames, RLE + GIF payload, RGB565/GDI+ content, `II2cBus`, `PanelController`, NVAPI transport. |
-| `src/AorusLcd.Cli` | Command-line front end. |
+| `src/AorusLcd.Core` | Protocol frames, RLE + GIF payload, RGB565/GDI+ content, `II2cBus`, `PanelController`, NVAPI transport, NVML sensors, shared feed config + `SystemBusLock`. |
+| `src/AorusLcd.Gui` | Avalonia cross-platform GUI (Device / LCD Panel / RGB tabs, tray, service management). |
+| `src/AorusLcd.Service` | NativeAOT background Windows service (`AorusLcdFeed`) that pushes the live sensor feed. |
 | `tests/AorusLcd.Tests` | xUnit byte-parity tests. |
 
 ## Safety
