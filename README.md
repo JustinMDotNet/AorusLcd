@@ -1,14 +1,16 @@
 # AorusLcd
 
 A lightweight Windows/.NET 10 controller for the **Gigabyte Aorus Master RTX 5090**
-"LCD Edge View" panel (and, optionally, its RGB lighting) — a low-overhead
+"LCD Edge View" panel **and its RGB Fusion 2 lighting** — a low-overhead
 replacement for Gigabyte Control Center's LCD/RGB features.
 
 This is a Windows port of the Linux tool
 [`albancreton/aorus-master-linux`](https://github.com/albancreton/aorus-master-linux),
-whose reverse-engineered `0x61` LCD protocol it reproduces byte-for-byte. It is
-**alpha, community software**, tested on a single card (Aorus Master RTX 5090).
-Not affiliated with or endorsed by Gigabyte or NVIDIA.
+whose reverse-engineered `0x61` LCD protocol it reproduces byte-for-byte, plus
+the RGB Fusion 2 GPU protocol from
+[OpenRGB](https://github.com/CalcProgrammer1/OpenRGB). It is **alpha, community
+software**, tested on a single card (Aorus Master RTX 5090). Not affiliated with
+or endorsed by Gigabyte or NVIDIA.
 
 ## How it works
 
@@ -17,10 +19,15 @@ controller GCC talks to. On Windows we reach that bus through **NVAPI**
 (`nvapi64.dll`): `NvAPI_I2CWriteEx` / `NvAPI_I2CReadEx` on GPU **port 1**, using
 raw block writes (no register address) — the same path OpenRGB uses.
 
-- Address `0x61` = LCD controller (all writes target this).
-- Address `0x71` = RGB controller (only touched by the optional `rgb` command).
+- Address `0x61` = LCD controller (all LCD writes target this).
+- Address `0x71`/`0x75` = RGB controller. On the RTX 5090 Master it answers at
+  **`0x75`** (write-only — it ACKs writes but does not reply to reads), so the
+  tool auto-detects by write-ACK and never issues a read that would wedge the
+  I2C engine.
 - Panel: 320x170, little-endian RGB565, row-major.
 - Upload: `F2(BEGIN)` → `F1` header → 256-byte chunks → `F2(END)`, then `E5` SetMode.
+- RGB: 8-byte raw block packets (mode header `0x88`, color `0x40`/`0xB0`/`0xB1`,
+  save `0xAA`) across 5 GPU zones.
 
 Before any write, the tool sends the `EB 03` status query and requires a
 read-back, so it never writes to a bus that does not answer.
@@ -61,6 +68,15 @@ $cli = "dotnet run --project src\AorusLcd.Cli --"
 & $cli off
 & $cli mode 3            # 3=image 4=text 5=gif 6=chibi
 & $cli carousel 0,1,4 --arg 5
+
+# ---- RGB lighting (RGB Fusion 2) ----
+& $cli rgb detect                              # find the RGB controller (0x71-0x75)
+& $cli rgb static FF6600 --brightness 100      # solid color
+& $cli rgb breathing 0000FF --speed 2          # pulsing effect
+& $cli rgb cycle --speed 3                      # rainbow color cycle
+& $cli rgb flash FF0000 --speed 4
+& $cli rgb wave --speed 2
+& $cli rgb off
 ```
 
 Experimental (semantics inferred from the decompile, not fully confirmed):
