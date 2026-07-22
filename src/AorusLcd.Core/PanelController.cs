@@ -27,10 +27,13 @@ public sealed class PanelController(II2cBus bus)
     /// Presence check: send the EB 03 status query (the same poll GCC uses) and
     /// return the 8-byte read-back. Throws if the controller does not answer.
     /// </summary>
-    public byte[] Probe() => ReadCommand(Opcode.GetData, [0x03]);
+    public byte[] Probe() => ReadCommand(Opcode.Probe, [0x03]);
 
     public void OpenLcd(bool on)
         => WriteFrame(ProtocolFrames.CmdFrame(Opcode.OpenLcd, [(byte)(on ? 1 : 2)]));
+
+    /// <summary>AA Save: persist the current LCD configuration to panel NVRAM.</summary>
+    public void Save() => WriteFrame(ProtocolFrames.CmdFrame(Opcode.Save));
 
     /// <summary>E5 SetMode: byte5 = mode+1. Mode 7 maps to internal 9 (GCC quirk).</summary>
     public void SetMode(int mode)
@@ -74,7 +77,107 @@ public sealed class PanelController(II2cBus bus)
 
     public void PowerOffMode() => WriteFrame(ProtocolFrames.CmdFrame(Opcode.PowerOff));
 
-    public void TextEffect() => WriteFrame(ProtocolFrames.CmdFrame(Opcode.TextEffect));
+    /// <summary>
+    /// EA SetImageTpl: configure an overlay template (color + image/data
+    /// positions) for image/gif/pet content. Layout from ucVga.dll's
+    /// GvLcdApi.SetImageTpl: type, RGB, image X/Y and data X/Y as 16-bit
+    /// big-endian pairs, and an enable flag.
+    /// </summary>
+    public void SetImageTemplate(LcdTemplate template)
+    {
+        byte[] tail =
+        [
+            (byte)template.Type,
+            template.ColorR, template.ColorG, template.ColorB,
+            High(template.ImagePosition.X), Low(template.ImagePosition.X),
+            High(template.ImagePosition.Y), Low(template.ImagePosition.Y),
+            High(template.DataPosition.X), Low(template.DataPosition.X),
+            High(template.DataPosition.Y), Low(template.DataPosition.Y),
+            (byte)(template.Enabled ? 1 : 0),
+        ];
+        WriteFrame(ProtocolFrames.CmdFrame(Opcode.SetImageTpl, tail));
+    }
+
+    // ---- read-back commands (write the query frame, then read bytes) -----------
+
+    /// <summary>D6 GetFWVersion: panel firmware version as "major.minor".</summary>
+    public string GetFirmwareVersion()
+    {
+        var r = ReadCommand(Opcode.GetFwVersion, [], 4);
+        return $"{r[1] >> 4}.{r[1] & 0xF}";
+    }
+
+    /// <summary>DE GetMode: current display mode and on/off state.</summary>
+    public (LcdMode Mode, bool On) GetMode()
+    {
+        var r = ReadCommand(Opcode.GetMode, [], 4);
+        int mode = r[1] - 1;
+        if (mode == 9)
+        {
+            mode = 7;
+        }
+        return ((LcdMode)mode, r[2] == 1);
+    }
+
+    /// <summary>DF GetDisplay: current dashboard element bitmask and interval.</summary>
+    public (LcdDisplayElements Elements, int Interval) GetDisplay()
+    {
+        var r = ReadCommand(Opcode.GetDisplay, [], 4);
+        var elements = LcdDisplayElements.None;
+        for (int i = 0; i < 8; i++)
+        {
+            if ((r[1] & (1 << i)) != 0)
+            {
+                elements |= (LcdDisplayElements)(1u << i);
+            }
+        }
+        return (elements, r[2]);
+    }
+
+    /// <summary>
+    /// F4 GetLoop: current carousel modes and interval. Reads banks 1..5, each
+    /// returning up to 3 (mode+1) entries plus the interval in byte 0.
+    /// </summary>
+    public (IReadOnlyList<int> Modes, int Interval) GetLoop()
+    {
+        var modes = new List<int>();
+        int interval = 0;
+        for (byte bank = 1; bank <= 5; bank++)
+        {
+            var r = ReadCommand(Opcode.GetLoop, [bank], 8);
+            for (int j = 0; j < 3; j++)
+            {
+                if (r[1 + j] != 0)
+                {
+                    modes.Add(r[1 + j] - 1);
+                }
+            }
+            interval = r[0];
+        }
+        return (modes, interval);
+    }
+
+    /// <summary>Read the full panel status in one call.</summary>
+    public LcdStatus GetStatus()
+    {
+        var (mode, on) = GetMode();
+        var (elements, interval) = GetDisplay();
+        var (loopModes, loopInterval) = GetLoop();
+        return new LcdStatus
+        {
+            FirmwareVersion = GetFirmwareVersion(),
+            Mode = mode,
+            IsOn = on,
+            DisplayElements = elements,
+            DisplayInterval = interval,
+            CarouselModes = loopModes,
+            CarouselInterval = loopInterval,
+        };
+    }
+
+    private static byte High(int v) => (byte)((v >> 8) & 0xFF);
+
+    private static byte Low(int v) => (byte)(v & 0xFF);
 
     /// <summary>
     /// Write the upload frames with the pacing the panel firmware needs.

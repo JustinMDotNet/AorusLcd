@@ -79,6 +79,64 @@ public class ProtocolTests
         Assert.All(frame[5..14], b => Assert.Equal(0, b));
     }
 
+    [Fact]
+    public void Save_SendsAaOpcode()
+    {
+        var bus = new CapturingBus();
+        new PanelController(bus).Save();
+        Assert.Equal(Opcode.Save, bus.LastWrite![0]);
+        Assert.Equal(new byte[] { 0xCB, 0x55, 0xAC, 0x38 }, bus.LastWrite![1..5]);
+    }
+
+    [Fact]
+    public void SetImageTemplate_EncodesColorAndPositions()
+    {
+        var bus = new CapturingBus();
+        new PanelController(bus).SetImageTemplate(new LcdTemplate
+        {
+            Type = LcdTemplateType.Image,
+            ColorR = 0x11, ColorG = 0x22, ColorB = 0x33,
+            ImagePosition = (0x0102, 0x0304),
+            DataPosition = (0x0506, 0x0708),
+            Enabled = true,
+        });
+        var f = bus.LastWrite!;
+        Assert.Equal(Opcode.SetImageTpl, f[0]);
+        Assert.Equal((byte)LcdTemplateType.Image, f[5]);
+        Assert.Equal(new byte[] { 0x11, 0x22, 0x33 }, f[6..9]);
+        Assert.Equal(new byte[] { 0x01, 0x02, 0x03, 0x04 }, f[9..13]);  // image X,Y big-endian
+        Assert.Equal(new byte[] { 0x05, 0x06, 0x07, 0x08 }, f[13..17]); // data X,Y big-endian
+        Assert.Equal(1, f[17]);
+    }
+
+    [Fact]
+    public void GetMode_ParsesModeAndOnState()
+    {
+        // array[1] = mode+1 (4 -> Text), array[2] = 1 (on)
+        var bus = new ScriptedBus([0x00, 0x05, 0x01, 0x00]);
+        var (mode, on) = new PanelController(bus).GetMode();
+        Assert.Equal(LcdMode.Text, mode);
+        Assert.True(on);
+    }
+
+    [Fact]
+    public void GetDisplay_ParsesElementBitmask()
+    {
+        // array[1] = 0x81 (GpuTemp|Tgp), array[2] = 4 (interval)
+        var bus = new ScriptedBus([0x00, 0x81, 0x04, 0x00]);
+        var (elements, interval) = new PanelController(bus).GetDisplay();
+        Assert.Equal(LcdDisplayElements.GpuTemp | LcdDisplayElements.Tgp, elements);
+        Assert.Equal(4, interval);
+    }
+
+    [Fact]
+    public void GetFirmwareVersion_ParsesNibbles()
+    {
+        // array[1] = 0x13 -> "1.3"
+        var bus = new ScriptedBus([0x00, 0x13, 0x00, 0x00]);
+        Assert.Equal("1.3", new PanelController(bus).GetFirmwareVersion());
+    }
+
     private sealed class CapturingBus : II2cBus
     {
         public byte[]? LastWrite { get; private set; }
@@ -86,6 +144,24 @@ public class ProtocolTests
         public void Write(ReadOnlySpan<byte> data) => LastWrite = data.ToArray();
 
         public byte[] Read(int count) => new byte[count];
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class ScriptedBus(byte[] readResponse) : II2cBus
+    {
+        public void Write(ReadOnlySpan<byte> data)
+        {
+        }
+
+        public byte[] Read(int count)
+        {
+            var r = new byte[count];
+            Array.Copy(readResponse, r, Math.Min(count, readResponse.Length));
+            return r;
+        }
 
         public void Dispose()
         {

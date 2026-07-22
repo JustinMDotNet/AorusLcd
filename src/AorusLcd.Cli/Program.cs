@@ -29,6 +29,8 @@ internal static class Program
                 "off" => WithPanel(p => p.OpenLcd(false), "panel OFF (E7 02)"),
                 "mode" => CmdMode(args),
                 "sensors" => CmdSensors(args),
+                "status" => CmdStatus(),
+                "save" => WithPanel(p => p.Save(), "saved LCD config to panel NVRAM (AA)"),
                 "image" => CmdImage(args),
                 "text" => CmdText(args),
                 "gif" => CmdGif(args),
@@ -116,7 +118,11 @@ internal static class Program
         {
             panel.SetDisplay(LcdDisplayElements.None, 0); // clear the sensor dashboard overlay
         }
-        Console.WriteLine("done" + (opts.NoMode ? "" : " (SetMode 3, sensors " + (keepSensors ? "kept" : "off") + ")"));
+        if (opts.Save)
+        {
+            panel.Save();
+        }
+        Console.WriteLine("done" + (opts.NoMode ? "" : " (SetMode 3, sensors " + (keepSensors ? "kept" : "off") + ")") + (opts.Save ? " (saved)" : ""));
         return 0;
     }
 
@@ -127,7 +133,7 @@ internal static class Program
         int size = GetIntOption(args, "--size", 28);
         var fg = ParseColor(GetOption(args, "--color", "8b8d8b"));
         var bg = ParseColor(GetOption(args, "--bg", "000000"));
-        bool noEffect = HasFlag(args, "--no-effect");
+        bool keepSensors = HasFlag(args, "--keep-sensors");
 
         var pixels = ImageContent.RenderTextLe565(text, size, fg, bg);
         var payload = Concat(Panel.Descriptor, pixels);
@@ -136,12 +142,15 @@ internal static class Program
         var panel = OpenPanel();
         panel.UploadContent(frames, Panel.ModeText, isGif: false,
             setDisplayMode: !opts.NoMode, chunkDelayMs: opts.ChunkDelayMs);
-        if (!opts.NoMode && !noEffect)
+        if (!opts.NoMode && !keepSensors)
         {
-            panel.TextEffect();
-            Console.WriteLine("text effect applied (AA)");
+            panel.SetDisplay(LcdDisplayElements.None, 0);
         }
-        Console.WriteLine("done");
+        if (opts.Save)
+        {
+            panel.Save();
+        }
+        Console.WriteLine("done" + (opts.Save ? " (saved)" : ""));
         return 0;
     }
 
@@ -159,7 +168,23 @@ internal static class Program
         var panel = OpenPanel();
         panel.UploadContent(frames, Panel.ModeGif, isGif: true,
             setDisplayMode: !opts.NoMode, chunkDelayMs: opts.ChunkDelayMs);
-        Console.WriteLine("done");
+        if (opts.Save)
+        {
+            panel.Save();
+        }
+        Console.WriteLine("done" + (opts.Save ? " (saved)" : ""));
+        return 0;
+    }
+
+    private static int CmdStatus()
+    {
+        var panel = OpenPanel();
+        var s = panel.GetStatus();
+        Console.WriteLine($"firmware:  {s.FirmwareVersion}");
+        Console.WriteLine($"panel:     {(s.IsOn ? "on" : "off")}");
+        Console.WriteLine($"mode:      {(int)s.Mode} ({s.Mode})");
+        Console.WriteLine($"sensors:   {s.DisplayElements} (interval {s.DisplayInterval})");
+        Console.WriteLine($"carousel:  [{string.Join(",", s.CarouselModes)}] (interval {s.CarouselInterval})");
         return 0;
     }
 
@@ -308,16 +333,17 @@ internal static class Program
         return 0;
     }
 
-    private readonly record struct UploadOptions(bool NoMode, int ChunkDelayMs)
+    private readonly record struct UploadOptions(bool NoMode, int ChunkDelayMs, bool Save)
     {
         public static UploadOptions Parse(string[] args)
         {
             bool noMode = Array.IndexOf(args, "--no-mode") >= 0;
+            bool save = Array.IndexOf(args, "--save") >= 0;
             int i = Array.IndexOf(args, "--chunk-delay");
             int delay = i >= 0 && i + 1 < args.Length && double.TryParse(args[i + 1], out double sec)
                 ? (int)Math.Round(sec * 1000)
                 : PanelController.DefaultChunkDelayMs;
-            return new UploadOptions(noMode, delay);
+            return new UploadOptions(noMode, delay, save);
         }
     }
 
@@ -327,13 +353,15 @@ internal static class Program
 
         LCD commands:
           probe                       find the GPU whose LCD controller answers at 0x61
+          status                      read firmware, mode, sensors and carousel state
           on | off                    turn the panel on/off
-          mode <0..7>                 3=image 4=text 5=gif 6=chibi
-          image <file> [--keep-sensors] [--no-mode] [--chunk-delay SEC]
-          text <msg> [--size N] [--color RRGGBB] [--bg RRGGBB] [--no-effect] [--no-mode]
-          gif <file> [--frame-delay MS] [--no-mode]
+          mode <0..7>                 0-2=stats 3=image 4=text 5=gif 6=chibi 7=carousel
+          image <file> [--keep-sensors] [--save] [--no-mode] [--chunk-delay SEC]
+          text <msg> [--size N] [--color RRGGBB] [--bg RRGGBB] [--keep-sensors] [--save] [--no-mode]
+          gif <file> [--frame-delay MS] [--save] [--no-mode]
           carousel <m,m,..> [--arg N]
           sensors off | sensors <gtemp,gclock,gusage,fan,rclock,rusage,fps,tgp> [--interval N]
+          save                        persist current LCD config to panel NVRAM (AA)
           poweroff-mode               [experimental]
           raw "aa 01 02"              [experimental] send a raw command frame
           raw-read "eb 03" [--len N]  [experimental] send a frame then read back

@@ -63,6 +63,13 @@ $cli = "dotnet run --project src\AorusLcd.Cli --"
 # play an animated gif
 & $cli gif animation.gif
 
+# read the panel's current state (firmware, mode, sensors, carousel)
+& $cli status
+
+# persist the current config to the panel so it survives reboot
+& $cli save
+& $cli image wallpaper.png --save        # upload + persist in one step
+
 # stop / configure the built-in sensor dashboard overlay (E1 SetDisplay)
 & $cli sensors off                             # clean image, no TGP/temp overlay
 & $cli sensors gtemp,tgp --interval 4          # show only GPU temp + TGP, rotate every 4s
@@ -97,10 +104,17 @@ Opcodes and layouts were confirmed by decompiling Gigabyte's `ucVga.dll`
 | `E7` | OpenLcd | byte5 = 1 on / 2 off |
 | `E5` | SetMode | byte5 = mode+1; mode 7 → internal 9 |
 | `E1` | SetDisplay | 8 sensor-element flags + interval byte (the dashboard overlay) |
-| `E3` | Sensor feed | GCC's service pushes live GPU stats here every second |
+| `EA` | SetImageTpl | overlay template: type, color, image/data positions, enable |
+| `AA` | Save | persist current LCD config to panel NVRAM |
 | `F3` | SetLoop | carousel: interval + (mode+1) list |
 | `F2`/`F1` | Upload | begin/header for image/text/gif frames |
-| `EB 03` | GetData | status query used by `probe` |
+| `E3` | Sensor feed | GCC's service pushes live GPU stats here every second |
+| `D6`/`DE`/`DF`/`F4` | Get FW / Mode / Display / Loop | read-back commands (used by `status`) |
+| `EB 03` | GetImageTpl | read PET template; a valid read-back doubles as the presence probe |
+
+The full LCD command surface (opcodes, byte layouts, mode/element enums, the
+LCD-capable SSID list) was recovered from Gigabyte's `ucVga.dll` `GvLcdApi` and
+reimplemented from scratch — facts only, no vendor code is included or shipped.
 
 Display modes: `0-2` built-in stat screens, `3` image, `4` text, `5` gif,
 `6` chibi, `7` carousel. The rotating TGP/temp overlay is the **E1 sensor
