@@ -24,9 +24,26 @@
     </PackageReference>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AorusLcd.Core\AorusLcd.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    Bundle the NativeAOT service exe next to the GUI so the in-app installer can
+    find it. Publish the service first (see README); when its published exe
+    exists it is copied into the GUI output.
+  -->
+  <ItemGroup>
+    <None Include="..\AorusLcd.Service\bin\x64\$(Configuration)\net10.0\win-x64\publish\AorusLcd.Service.exe"
+          Condition="Exists('..\AorusLcd.Service\bin\x64\$(Configuration)\net10.0\win-x64\publish\AorusLcd.Service.exe')"
+          Link="AorusLcd.Service.exe"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\AorusLcd.Service\bin\$(Configuration)\net10.0\win-x64\publish\AorusLcd.Service.exe"
+          Condition="!Exists('..\AorusLcd.Service\bin\x64\$(Configuration)\net10.0\win-x64\publish\AorusLcd.Service.exe') And Exists('..\AorusLcd.Service\bin\$(Configuration)\net10.0\win-x64\publish\AorusLcd.Service.exe')"
+          Link="AorusLcd.Service.exe"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

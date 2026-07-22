@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using AorusLcd.Core;
 using AorusLcd.Core.Rgb;
+using AorusLcd.Core.Sensors;
 using AorusLcd.Gui.Models;
 using AorusLcd.Gui.Services;
 using Avalonia.Media;
@@ -17,11 +18,17 @@ namespace AorusLcd.Gui.ViewModels;
 /// Main application state: panel status, image upload, the sensor dashboard,
 /// and RGB lighting. Hardware calls run on background threads; UI-bound
 /// properties are updated back on the UI thread.
+///
+/// The live sensor dashboard is driven by the background <c>AorusLcdFeed</c>
+/// Windows service, not the GUI process: enabling sensors writes a shared
+/// <see cref="FeedConfig"/> that the service watches and acts on, so the panel
+/// keeps updating after the GUI is closed. The GUI only manages the service and
+/// performs one-shot panel/RGB commands.
 /// </summary>
 public partial class MainViewModel : ViewModelBase
 {
     private readonly HardwareService _hw = new();
-    private readonly SensorFeedService _feed;
+    private readonly ServiceControl _service = new();
 
     /// <summary>Set by the view to present a file picker (needs a TopLevel).</summary>
     public Func<Task<string?>>? ImagePicker { get; set; }
@@ -30,9 +37,8 @@ public partial class MainViewModel : ViewModelBase
     {
         RgbModes = ["Static", "Breathing", "Color Cycle", "Flash", "Wave"];
         SelectedRgbMode = RgbModes[0];
-        _feed = new SensorFeedService(_hw);
-        _feed.Error += msg => Dispatcher.UIThread.Post(() => StatusMessage = $"Sensor feed: {msg}");
         StartWithWindows = StartupService.IsEnabled(); // reflect current registry state
+        RefreshServiceState();
         StatusMessage = _hw.IsSupportedPlatform
             ? "Ready. Click Refresh to connect to the panel."
             : "Hardware control needs Windows (NVAPI) for now; UI is cross-platform.";
@@ -116,8 +122,19 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial int SensorInterval { get; set; } = 4;
 
+    // ---- background service -------------------------------------------------
+
     [ObservableProperty]
-    public partial bool LiveFeedRunning { get; set; }
+    public partial string ServiceStatusText { get; set; } = "—";
+
+    [ObservableProperty]
+    public partial bool ServiceInstalled { get; set; }
+
+    [ObservableProperty]
+    public partial bool ServiceRunning { get; set; }
+
+    /// <summary>True on platforms where the background service is available (Windows).</summary>
+    public bool ServiceSupported => OperatingSystem.IsWindows();
 
     // ---- built-in modes / text / gif / carousel ----------------------------
 
@@ -247,7 +264,7 @@ public partial class MainViewModel : ViewModelBase
             await _hw.SendImageAsync(le565, clear, save);
             if (clear)
             {
-                await StopFeedAsync(); // the dashboard was cleared; stop feeding it
+                DisableFeedConfig(); // the dashboard was cleared; stop the background feed
             }
             return "Image sent" + (clear ? ", sensors off" : "") + (save ? ", saved" : "") + ".";
         });
@@ -258,34 +275,19 @@ public partial class MainViewModel : ViewModelBase
     {
         var elements = CollectSensorFlags();
         int interval = SensorInterval;
-        int widgetCount = CountFlags(elements);
-        bool save = SaveOnSend;
         return RunAsync("Applying sensor dashboard…", async () =>
         {
             if (elements == LcdDisplayElements.None)
             {
-                await StopFeedAsync();
-                await _hw.SetSensorsAsync(LcdDisplayElements.None, 0, save);
-                return "Sensor dashboard off.";
+                return await DisableSensorsAsync();
             }
 
-            // Validate NVML + connection before enabling the dashboard, so we
-            // never leave the panel showing widgets we can't feed.
-            await _hw.ConnectAsync();
-            int pollMs = StartFeed(widgetCount, interval);
-            try
-            {
-                await _hw.SetSensorsAsync(elements, interval, save);
-            }
-            catch
-            {
-                await StopFeedAsync();
-                throw;
-            }
-            string cadence = widgetCount <= 1
-                ? $"polling {pollMs / 1000.0:0.#}s (live)"
-                : $"polling {pollMs / 1000.0:0.#}s (per {interval}s rotation)";
-            return $"Sensors: {elements} — live feed running, {cadence}.";
+            // The background service reads this config (via a file watcher) and
+            // drives the panel's E1 dashboard + E3 live values, so the feed keeps
+            // running after the GUI is closed.
+            WriteFeedConfig(elements, interval, enabled: true);
+            string state = await EnsureServiceRunningForFeedAsync();
+            return $"Sensors: {elements} — {state}";
         });
     }
 
@@ -293,13 +295,18 @@ public partial class MainViewModel : ViewModelBase
     private Task SensorsOffAsync()
     {
         ClearAllSensorToggles();
-        bool save = SaveOnSend;
-        return RunAsync("Disabling sensor dashboard…", async () =>
-        {
-            await StopFeedAsync();
-            await _hw.SetSensorsAsync(LcdDisplayElements.None, 0, save);
-            return "Sensor dashboard off.";
-        });
+        return RunAsync("Disabling sensor dashboard…", async () => await DisableSensorsAsync());
+    }
+
+    /// <summary>
+    /// Turn the dashboard off: stop the background feed (config) and clear the
+    /// panel's dashboard directly so the widgets disappear immediately.
+    /// </summary>
+    private async Task<string> DisableSensorsAsync()
+    {
+        WriteFeedConfig(LcdDisplayElements.None, SensorInterval, enabled: false);
+        await _hw.SetSensorsAsync(LcdDisplayElements.None, 0, SaveOnSend);
+        return "Sensor dashboard off.";
     }
 
     [RelayCommand]
@@ -354,7 +361,7 @@ public partial class MainViewModel : ViewModelBase
             await _hw.SendTextAsync(le565, clear, save);
             if (clear)
             {
-                await StopFeedAsync(); // the dashboard was cleared; stop feeding it
+                DisableFeedConfig(); // the dashboard was cleared; stop the background feed
             }
             return $"Text \"{text}\" sent" + (save ? ", saved" : "") + ".";
         });
@@ -448,6 +455,40 @@ public partial class MainViewModel : ViewModelBase
         return "RGB off.";
     });
 
+    // ---- background service commands ---------------------------------------
+
+    [RelayCommand]
+    private Task InstallServiceAsync() => RunAsync("Installing background service…", async () =>
+    {
+        await _service.InstallAsync();
+        await RefreshServiceStateAfterDelayAsync();
+        return "Background service installed and started.";
+    });
+
+    [RelayCommand]
+    private Task UninstallServiceAsync() => RunAsync("Removing background service…", async () =>
+    {
+        await _service.UninstallAsync();
+        await RefreshServiceStateAfterDelayAsync();
+        return "Background service removed.";
+    });
+
+    [RelayCommand]
+    private Task StartServiceAsync() => RunAsync("Starting background service…", async () =>
+    {
+        await _service.StartAsync();
+        await RefreshServiceStateAfterDelayAsync();
+        return "Background service started.";
+    });
+
+    [RelayCommand]
+    private Task StopServiceAsync() => RunAsync("Stopping background service…", async () =>
+    {
+        await _service.StopAsync();
+        await RefreshServiceStateAfterDelayAsync();
+        return "Background service stopped.";
+    });
+
     // ---- helpers -----------------------------------------------------------
 
     private async Task RunAsync(string busyMessage, Func<Task<string>> action)
@@ -500,27 +541,79 @@ public partial class MainViewModel : ViewModelBase
 
     private void ClearAllSensorToggles() => SetSensorToggles(LcdDisplayElements.None);
 
-    private int StartFeed(int widgetCount, int rotationIntervalSeconds)
+    /// <summary>Persist the dashboard config the background service consumes.</summary>
+    private void WriteFeedConfig(LcdDisplayElements elements, int intervalSeconds, bool enabled)
+        => new FeedConfig
+        {
+            DisplayElements = (uint)elements,
+            IntervalSeconds = intervalSeconds,
+            Enabled = enabled,
+        }.Save();
+
+    /// <summary>Flip the persisted feed config to disabled without touching the toggles.</summary>
+    private void DisableFeedConfig()
     {
-        _feed.Start(widgetCount, rotationIntervalSeconds, _hw.PanelBusId);
-        Dispatcher.UIThread.Post(() => LiveFeedRunning = _feed.IsRunning);
-        return _feed.PollIntervalMs;
+        var current = FeedConfig.Load();
+        WriteFeedConfig(current.Elements, current.IntervalSeconds, enabled: false);
     }
 
-    private async Task StopFeedAsync()
+    /// <summary>
+    /// Ensure the background service is running so it can act on the config we
+    /// just wrote. Starts it if installed-but-stopped; prompts to install it
+    /// otherwise. Returns a human-readable state for the status line.
+    /// </summary>
+    private async Task<string> EnsureServiceRunningForFeedAsync()
     {
-        await _feed.StopAsync();
-        Dispatcher.UIThread.Post(() => LiveFeedRunning = _feed.IsRunning);
+        switch (_service.GetState())
+        {
+            case ServiceState.Running:
+                RefreshServiceState();
+                return "live feed running via background service.";
+            case ServiceState.Stopped:
+                await _service.StartAsync();
+                await RefreshServiceStateAfterDelayAsync();
+                return "background service started; live feed running.";
+            case ServiceState.NotInstalled:
+                RefreshServiceState();
+                return "saved — install the background service (Device tab) to drive the panel.";
+            default:
+                RefreshServiceState();
+                return "saved; background service is changing state.";
+        }
     }
 
-    private static int CountFlags(LcdDisplayElements elements)
-        => System.Numerics.BitOperations.PopCount((uint)elements);
-
-    /// <summary>Stop the background feed cleanly on app shutdown.</summary>
-    public async Task ShutdownAsync()
+    private void RefreshServiceState()
     {
-        await _feed.DisposeAsync();
+        var state = _service.GetState();
+        Dispatcher.UIThread.Post(() =>
+        {
+            ServiceInstalled = state is ServiceState.Stopped or ServiceState.Running or ServiceState.Transitioning;
+            ServiceRunning = state == ServiceState.Running;
+            ServiceStatusText = state switch
+            {
+                ServiceState.Running => "Installed — running",
+                ServiceState.Stopped => "Installed — stopped",
+                ServiceState.Transitioning => "Installed — changing state…",
+                ServiceState.NotInstalled => "Not installed",
+                _ => "Not available on this platform",
+            };
+        });
+    }
+
+    private async Task RefreshServiceStateAfterDelayAsync()
+    {
+        await Task.Delay(800).ConfigureAwait(false); // let the SCM settle after a state change
+        RefreshServiceState();
+    }
+
+    /// <summary>
+    /// Clean up UI resources on app shutdown. The background service is left
+    /// running deliberately so the panel keeps updating after the GUI closes.
+    /// </summary>
+    public Task ShutdownAsync()
+    {
         Dispatcher.UIThread.Post(() => PreviewImage?.Dispose());
+        return Task.CompletedTask;
     }
 
     private static RgbMode MapRgbMode(string name) => name switch

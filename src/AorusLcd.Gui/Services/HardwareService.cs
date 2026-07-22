@@ -17,19 +17,17 @@ public sealed class HardwareUnavailableException(string message) : Exception(mes
 /// is not yet available (the Linux i2c-dev backend is a planned drop-in via
 /// <see cref="II2cBus"/>).
 ///
-/// All GPU I2C access is serialized through a single async gate
-/// (<see cref="SemaphoreSlim"/>) so the background sensor feed never interleaves
-/// with user commands on the shared 0x61 bus — and, because the gate is async,
-/// a multi-second upload can hold it across <c>await Task.Delay</c> pacing
-/// without blocking any thread. The located controllers are cached to avoid
-/// re-probing each call.
+/// Every operation runs on a worker thread and holds the cross-process
+/// <see cref="SystemBusLock"/> for its full duration, so a user command (e.g. a
+/// multi-second image upload) is never interleaved with the background service's
+/// sensor feed on the shared 0x61 bus. The located controllers are cached to
+/// avoid re-probing each call.
 /// </summary>
 public sealed class HardwareService
 {
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly Lazy<SystemBusLock> _busLock = new(() => new SystemBusLock());
     private PanelController? _panel;
     private string _gpuName = "—";
-    private uint? _panelBusId;
     private RgbFusion2Controller? _rgb;
     private byte _rgbAddress;
 
@@ -37,20 +35,18 @@ public sealed class HardwareService
 
     public string GpuName => _gpuName;
 
-    /// <summary>PCI bus id of the located Aorus GPU, for matching the NVML sensor device.</summary>
-    public uint? PanelBusId => _panelBusId;
-
     // ---- LCD ---------------------------------------------------------------
 
-    public Task<string> ConnectAsync() => WithPanelAsync(_ => Task.FromResult(_gpuName));
+    public Task<string> ConnectAsync() => WithPanelAsync(_ => _gpuName);
 
-    public Task<LcdStatus> GetStatusAsync() => WithPanelAsync(panel => Task.FromResult(panel.GetStatus()));
+    public Task<LcdStatus> GetStatusAsync() => WithPanelAsync(panel => panel.GetStatus());
 
     public Task SendImageAsync(byte[] le565, bool clearSensors, bool save, CancellationToken ct = default)
-        => DoAsync(async panel =>
+        => WithPanelAsync(panel =>
         {
             var frames = ProtocolFrames.BuildUpload(ByteOps.Concat(Panel.Descriptor, le565), Panel.FramebufferStatic);
-            await panel.UploadContentAsync(frames, Panel.ModeStatic, isGif: false, cancellationToken: ct);
+            panel.UploadContentAsync(frames, Panel.ModeStatic, isGif: false, cancellationToken: ct)
+                .GetAwaiter().GetResult();
             if (clearSensors)
             {
                 panel.SetDisplay(LcdDisplayElements.None, 0);
@@ -59,13 +55,14 @@ public sealed class HardwareService
             {
                 panel.Save();
             }
-        }, ct);
+        });
 
     public Task SendTextAsync(byte[] le565, bool clearSensors, bool save, CancellationToken ct = default)
-        => DoAsync(async panel =>
+        => WithPanelAsync(panel =>
         {
             var frames = ProtocolFrames.BuildUpload(ByteOps.Concat(Panel.Descriptor, le565), Panel.FramebufferText);
-            await panel.UploadContentAsync(frames, Panel.ModeText, isGif: false, cancellationToken: ct);
+            panel.UploadContentAsync(frames, Panel.ModeText, isGif: false, cancellationToken: ct)
+                .GetAwaiter().GetResult();
             if (clearSensors)
             {
                 panel.SetDisplay(LcdDisplayElements.None, 0);
@@ -74,24 +71,25 @@ public sealed class HardwareService
             {
                 panel.Save();
             }
-        }, ct);
+        });
 
     public Task SendGifAsync(IReadOnlyList<byte[]> le565Frames, IReadOnlyList<int> delaysMs,
         bool save, CancellationToken ct = default)
-        => DoAsync(async panel =>
+        => WithPanelAsync(panel =>
         {
             var (payload, count, delayMs) = GifPayload.Build(le565Frames, delaysMs, null);
             var frames = ProtocolFrames.BuildUpload(payload, Panel.FramebufferGif,
                 flag: 2, nframes: (ushort)count, delay: delayMs, mode: 2);
-            await panel.UploadContentAsync(frames, Panel.ModeGif, isGif: true, cancellationToken: ct);
+            panel.UploadContentAsync(frames, Panel.ModeGif, isGif: true, cancellationToken: ct)
+                .GetAwaiter().GetResult();
             if (save)
             {
                 panel.Save();
             }
-        }, ct);
+        });
 
     public Task SetSensorsAsync(LcdDisplayElements elements, int intervalSeconds, bool save)
-        => DoSyncAsync(panel =>
+        => WithPanelAsync(panel =>
         {
             panel.SetDisplay(elements, intervalSeconds);
             if (save)
@@ -101,7 +99,7 @@ public sealed class HardwareService
         });
 
     public Task SetCarouselAsync(IReadOnlyList<int> modes, int intervalSeconds, bool save)
-        => DoSyncAsync(panel =>
+        => WithPanelAsync(panel =>
         {
             panel.SetCarousel(modes, intervalSeconds);
             if (save)
@@ -110,106 +108,81 @@ public sealed class HardwareService
             }
         });
 
-    public Task SetPanelPowerAsync(bool on) => DoSyncAsync(panel => panel.OpenLcd(on));
+    public Task SetPanelPowerAsync(bool on) => WithPanelAsync(panel => panel.OpenLcd(on));
 
-    public Task SetModeAsync(LcdMode mode) => DoSyncAsync(panel => panel.SetMode((int)mode));
+    public Task SetModeAsync(LcdMode mode) => WithPanelAsync(panel => panel.SetMode((int)mode));
 
-    public Task SaveAsync() => DoSyncAsync(panel => panel.Save());
-
-    /// <summary>Push one live sensor frame (E3). Used by the background feed.</summary>
-    public Task SendSensorFeedAsync(SensorSample sample, CancellationToken ct = default)
-        => DoAsync(panel => { panel.SendSensorFeed(sample); return Task.CompletedTask; }, ct);
+    public Task SaveAsync() => WithPanelAsync(panel => panel.Save());
 
     // ---- RGB ---------------------------------------------------------------
 
     public Task<(string GpuName, byte Address)> ConnectRgbAsync()
-        => WithRgbAsync(_ => Task.FromResult((_gpuName, _rgbAddress)));
+        => WithRgbAsync(_ => (_gpuName, _rgbAddress));
 
     public Task SetRgbStaticAsync(RgbColor color, byte brightness)
-        => DoRgbAsync(rgb => { rgb.SetStatic(color, brightness); return Task.CompletedTask; });
+        => WithRgbAsync(rgb => rgb.SetStatic(color, brightness));
 
     public Task SetRgbEffectAsync(RgbMode mode, RgbColor[] colors, byte speed, byte brightness)
-        => DoRgbAsync(rgb => { rgb.SetEffect(mode, colors, speed, brightness); return Task.CompletedTask; });
+        => WithRgbAsync(rgb => rgb.SetEffect(mode, colors, speed, brightness));
 
-    public Task RgbOffAsync() => DoRgbAsync(rgb => { rgb.Off(); return Task.CompletedTask; });
+    public Task RgbOffAsync() => WithRgbAsync(rgb => rgb.Off());
 
     // ---- internals ---------------------------------------------------------
 
-    private async Task DoAsync(Func<PanelController, Task> action, CancellationToken ct = default)
-    {
-        await _gate.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            // Off-load to a worker thread: WaitAsync completes synchronously when
-            // uncontended, so the blocking native I2C work must not run inline
-            // on the caller (UI) thread.
-            await Task.Run(() => action(EnsurePanel()), ct).ConfigureAwait(false);
-        }
-        catch (NvApiException)
-        {
-            _panel = null; // force re-locate next time
-            throw;
-        }
-        finally
-        {
-            _gate.Release();
-        }
-    }
+    private Task WithPanelAsync(Action<PanelController> action)
+        => WithPanelAsync(panel => { action(panel); return true; });
 
-    private Task DoSyncAsync(Action<PanelController> action)
-        => DoAsync(panel => { action(panel); return Task.CompletedTask; });
-
-    private async Task<T> WithPanelAsync<T>(Func<PanelController, Task<T>> action)
+    private Task<T> WithPanelAsync<T>(Func<PanelController, T> action) => Task.Run(() =>
     {
-        await _gate.WaitAsync().ConfigureAwait(false);
-        try
+        using (AcquireBus())
         {
-            return await Task.Run(() => action(EnsurePanel())).ConfigureAwait(false);
+            try
+            {
+                return action(EnsurePanel());
+            }
+            catch (NvApiException)
+            {
+                _panel = null; // force re-locate next time
+                throw;
+            }
         }
-        catch (NvApiException)
-        {
-            _panel = null;
-            throw;
-        }
-        finally
-        {
-            _gate.Release();
-        }
-    }
+    });
 
-    private async Task DoRgbAsync(Func<RgbFusion2Controller, Task> action)
-    {
-        await _gate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            await Task.Run(() => action(EnsureRgb())).ConfigureAwait(false);
-        }
-        catch (NvApiException)
-        {
-            _rgb = null;
-            throw;
-        }
-        finally
-        {
-            _gate.Release();
-        }
-    }
+    private Task WithRgbAsync(Action<RgbFusion2Controller> action)
+        => WithRgbAsync(rgb => { action(rgb); return true; });
 
-    private async Task<T> WithRgbAsync<T>(Func<RgbFusion2Controller, Task<T>> action)
+    private Task<T> WithRgbAsync<T>(Func<RgbFusion2Controller, T> action) => Task.Run(() =>
     {
-        await _gate.WaitAsync().ConfigureAwait(false);
-        try
+        using (AcquireBus())
         {
-            return await Task.Run(() => action(EnsureRgb())).ConfigureAwait(false);
+            try
+            {
+                return action(EnsureRgb());
+            }
+            catch (NvApiException)
+            {
+                _rgb = null;
+                throw;
+            }
         }
-        catch (NvApiException)
+    });
+
+    /// <summary>
+    /// Acquire the cross-process bus lock (Windows only). The returned handle is
+    /// disposed on the same worker thread that took it, honouring the mutex's
+    /// thread affinity. On unsupported platforms this is a no-op; the subsequent
+    /// <see cref="EnsurePanel"/>/<see cref="EnsureRgb"/> call raises the friendly
+    /// <see cref="HardwareUnavailableException"/>.
+    /// </summary>
+    private IDisposable AcquireBus()
+        => OperatingSystem.IsWindows() ? _busLock.Value.Acquire() : NoLock.Instance;
+
+    private sealed class NoLock : IDisposable
+    {
+        public static readonly NoLock Instance = new();
+
+        public void Dispose()
         {
-            _rgb = null;
-            throw;
-        }
-        finally
-        {
-            _gate.Release();
         }
     }
 
@@ -227,7 +200,6 @@ public sealed class HardwareService
                 "No Aorus LCD found (no GPU answered the status query at 0x61 on port 1).");
         }
         _gpuName = located.Value.GpuName;
-        _panelBusId = located.Value.Bus.PciBusId;
         _panel = new PanelController(located.Value.Bus);
         return _panel;
     }

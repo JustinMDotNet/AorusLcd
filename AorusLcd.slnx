@@ -1,8 +1,8 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/AorusLcd.Cli/AorusLcd.Cli.csproj" />
     <Project Path="src/AorusLcd.Core/AorusLcd.Core.csproj" />
     <Project Path="src/AorusLcd.Gui/AorusLcd.Gui.csproj" />
+    <Project Path="src/AorusLcd.Service/AorusLcd.Service.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AorusLcd.Tests/AorusLcd.Tests.csproj" />
