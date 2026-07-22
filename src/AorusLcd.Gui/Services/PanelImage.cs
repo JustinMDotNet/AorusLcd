@@ -44,14 +44,6 @@ public static class PanelImage
             handle.Free();
         }
 
-        var rgb = new byte[Panel.FramePixels * 3];
-        int di = 0;
-        for (int i = 0; i < bgra.Length; i += 4)
-        {
-            rgb[di++] = bgra[i + 2]; // R
-            rgb[di++] = bgra[i + 1]; // G
-            rgb[di++] = bgra[i];     // B
-        }
-        return Rgb565Encoder.Encode(rgb);
+        return Rgb565Encoder.EncodeBgra(bgra);
     }
 }

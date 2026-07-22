@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using AorusLcd.Core;
 using AorusLcd.Core.Nvapi;
+using AorusLcd.Core.Rgb;
 
 namespace AorusLcd.Cli;
 
@@ -11,7 +12,7 @@ namespace AorusLcd.Cli;
 [SupportedOSPlatform("windows")]
 internal static class Program
 {
-    private static int Main(string[] args)
+    private static async Task<int> Main(string[] args)
     {
         if (args.Length == 0)
         {
@@ -31,9 +32,9 @@ internal static class Program
                 "sensors" => CmdSensors(args),
                 "status" => CmdStatus(),
                 "save" => WithPanel(p => p.Save(), "saved LCD config to panel NVRAM (AA)"),
-                "image" => CmdImage(args),
-                "text" => CmdText(args),
-                "gif" => CmdGif(args),
+                "image" => await CmdImageAsync(args),
+                "text" => await CmdTextAsync(args),
+                "gif" => await CmdGifAsync(args),
                 "carousel" => CmdCarousel(args),
                 "brightness" => Fail("'brightness' was removed: 0xE1 is the sensor-dashboard command, not brightness. Use 'sensors' instead."),
                 "poweroff-mode" => WithPanel(p => p.PowerOffMode(), "SetPCPowerOffMode (FA)", "poweroff-mode"),
@@ -48,7 +49,15 @@ internal static class Program
         {
             return Fail(e.Message);
         }
+        catch (DllNotFoundException)
+        {
+            return Fail("NVAPI (nvapi64.dll) not found. Install the NVIDIA driver and run on a machine with an NVIDIA GPU.");
+        }
         catch (FileNotFoundException e)
+        {
+            return Fail(e.Message);
+        }
+        catch (FormatException e)
         {
             return Fail(e.Message);
         }
@@ -102,17 +111,17 @@ internal static class Program
         return WithPanel(p => p.SetMode(mode), $"SetMode {mode}");
     }
 
-    private static int CmdImage(string[] args)
+    private static async Task<int> CmdImageAsync(string[] args)
     {
         string file = RequireArg(args, 1, "image <file>");
         var opts = UploadOptions.Parse(args);
         bool keepSensors = HasFlag(args, "--keep-sensors");
         var pixels = ImageContent.LoadImageLe565(file);
-        var payload = Concat(Panel.Descriptor, pixels);
+        var payload = ByteOps.Concat(Panel.Descriptor, pixels);
         var frames = ProtocolFrames.BuildUpload(payload, Panel.FramebufferStatic);
         Console.WriteLine($"uploading {file} ({frames.Count} i2c writes) ...");
         var panel = OpenPanel();
-        panel.UploadContent(frames, Panel.ModeStatic, isGif: false,
+        await panel.UploadContentAsync(frames, Panel.ModeStatic, isGif: false,
             setDisplayMode: !opts.NoMode, chunkDelayMs: opts.ChunkDelayMs);
         if (!opts.NoMode && !keepSensors)
         {
@@ -126,7 +135,7 @@ internal static class Program
         return 0;
     }
 
-    private static int CmdText(string[] args)
+    private static async Task<int> CmdTextAsync(string[] args)
     {
         string text = RequireArg(args, 1, "text <message>");
         var opts = UploadOptions.Parse(args);
@@ -136,11 +145,11 @@ internal static class Program
         bool keepSensors = HasFlag(args, "--keep-sensors");
 
         var pixels = ImageContent.RenderTextLe565(text, size, fg, bg);
-        var payload = Concat(Panel.Descriptor, pixels);
+        var payload = ByteOps.Concat(Panel.Descriptor, pixels);
         var frames = ProtocolFrames.BuildUpload(payload, Panel.FramebufferText);
         Console.WriteLine($"uploading text \"{text}\" ({frames.Count} i2c writes) ...");
         var panel = OpenPanel();
-        panel.UploadContent(frames, Panel.ModeText, isGif: false,
+        await panel.UploadContentAsync(frames, Panel.ModeText, isGif: false,
             setDisplayMode: !opts.NoMode, chunkDelayMs: opts.ChunkDelayMs);
         if (!opts.NoMode && !keepSensors)
         {
@@ -154,7 +163,7 @@ internal static class Program
         return 0;
     }
 
-    private static int CmdGif(string[] args)
+    private static async Task<int> CmdGifAsync(string[] args)
     {
         string file = RequireArg(args, 1, "gif <file>");
         var opts = UploadOptions.Parse(args);
@@ -166,7 +175,7 @@ internal static class Program
             flag: 2, nframes: (ushort)count, delay: delayMs, mode: 2);
         Console.WriteLine($"uploading {file}: {count} frames, {frames.Count} i2c writes ...");
         var panel = OpenPanel();
-        panel.UploadContent(frames, Panel.ModeGif, isGif: true,
+        await panel.UploadContentAsync(frames, Panel.ModeGif, isGif: true,
             setDisplayMode: !opts.NoMode, chunkDelayMs: opts.ChunkDelayMs);
         if (opts.Save)
         {
@@ -302,21 +311,13 @@ internal static class Program
 
     private static (byte R, byte G, byte B) ParseColor(string s)
     {
-        s = s.TrimStart('#');
-        return (Convert.ToByte(s[..2], 16), Convert.ToByte(s.Substring(2, 2), 16), Convert.ToByte(s.Substring(4, 2), 16));
+        var c = RgbColor.Parse(s);
+        return (c.R, c.G, c.B);
     }
 
     private static byte[] ParseHexBytes(string s)
         => s.Replace(",", " ").Split(' ', StringSplitOptions.RemoveEmptyEntries)
             .Select(x => Convert.ToByte(x, 16)).ToArray();
-
-    private static byte[] Concat(byte[] a, byte[] b)
-    {
-        var r = new byte[a.Length + b.Length];
-        a.CopyTo(r, 0);
-        b.CopyTo(r, a.Length);
-        return r;
-    }
 
     private static void Experimental(string what)
         => Console.WriteLine($"note: '{what}' is EXPERIMENTAL — semantics inferred from the decompile, not fully hardware-confirmed.");

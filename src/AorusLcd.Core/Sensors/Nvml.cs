@@ -51,6 +51,22 @@ internal static class Nvml
         public uint Memory;
     }
 
+    // nvmlPciInfo_t: busIdLegacy[16], domain, bus, device, pciDeviceId,
+    // pciSubSystemId, busId[32]. Only domain/bus/device are needed for matching.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PciInfo
+    {
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
+        public byte[] BusIdLegacy;
+        public uint Domain;
+        public uint Bus;
+        public uint Device;
+        public uint PciDeviceId;
+        public uint PciSubSystemId;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
+        public byte[] BusId;
+    }
+
     // 0 = NVML_SUCCESS. sensorType 0 = GPU; clockType 0 = graphics, 2 = mem.
     [DllImport(Lib, EntryPoint = "nvmlInit_v2")]
     public static extern int Init();
@@ -58,8 +74,14 @@ internal static class Nvml
     [DllImport(Lib, EntryPoint = "nvmlShutdown")]
     public static extern int Shutdown();
 
+    [DllImport(Lib, EntryPoint = "nvmlDeviceGetCount_v2")]
+    public static extern int GetCount(out uint count);
+
     [DllImport(Lib, EntryPoint = "nvmlDeviceGetHandleByIndex_v2")]
     public static extern int GetHandleByIndex(uint index, out IntPtr device);
+
+    [DllImport(Lib, EntryPoint = "nvmlDeviceGetPciInfo_v3")]
+    public static extern int GetPciInfo(IntPtr device, ref PciInfo pci);
 
     [DllImport(Lib, EntryPoint = "nvmlDeviceGetTemperature")]
     public static extern int GetTemperature(IntPtr device, uint sensorType, out uint tempC);

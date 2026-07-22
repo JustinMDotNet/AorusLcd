@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 namespace AorusLcd.Core;
 
 /// <summary>
@@ -9,6 +11,7 @@ public sealed class PanelController(II2cBus bus)
 {
     private const int PaceBeginMs = 500;
     private const int PaceHeaderMs = 1000;
+    private const int GifModeSettleMs = 200;
     public const int DefaultChunkDelayMs = 10;
 
     private readonly II2cBus _bus = bus;
@@ -85,17 +88,15 @@ public sealed class PanelController(II2cBus bus)
     /// </summary>
     public void SendSensorFeed(SensorSample s)
     {
-        byte[] tail =
-        [
-            Clamp8(s.GpuTempC),
-            High(s.GpuClockMhz), Low(s.GpuClockMhz),
-            Clamp8(s.GpuUsagePercent),
-            High(s.FanSpeed), Low(s.FanSpeed),
-            High(s.RamClockMhz), Low(s.RamClockMhz),
-            Clamp8(s.RamUsagePercent),
-            High(s.Fps), Low(s.Fps),
-            High(s.TgpWatts), Low(s.TgpWatts),
-        ];
+        Span<byte> tail = stackalloc byte[13];
+        tail[0] = Clamp8(s.GpuTempC);
+        BinaryPrimitives.WriteUInt16BigEndian(tail[1..], Clamp16(s.GpuClockMhz));
+        tail[3] = Clamp8(s.GpuUsagePercent);
+        BinaryPrimitives.WriteUInt16BigEndian(tail[4..], Clamp16(s.FanSpeed));
+        BinaryPrimitives.WriteUInt16BigEndian(tail[6..], Clamp16(s.RamClockMhz));
+        tail[8] = Clamp8(s.RamUsagePercent);
+        BinaryPrimitives.WriteUInt16BigEndian(tail[9..], Clamp16(s.Fps));
+        BinaryPrimitives.WriteUInt16BigEndian(tail[11..], Clamp16(s.TgpWatts));
         WriteFrame(ProtocolFrames.CmdFrame(Opcode.SensorFeed, tail));
     }
 
@@ -107,16 +108,16 @@ public sealed class PanelController(II2cBus bus)
     /// </summary>
     public void SetImageTemplate(LcdTemplate template)
     {
-        byte[] tail =
-        [
-            (byte)template.Type,
-            template.ColorR, template.ColorG, template.ColorB,
-            High(template.ImagePosition.X), Low(template.ImagePosition.X),
-            High(template.ImagePosition.Y), Low(template.ImagePosition.Y),
-            High(template.DataPosition.X), Low(template.DataPosition.X),
-            High(template.DataPosition.Y), Low(template.DataPosition.Y),
-            (byte)(template.Enabled ? 1 : 0),
-        ];
+        Span<byte> tail = stackalloc byte[13];
+        tail[0] = (byte)template.Type;
+        tail[1] = template.ColorR;
+        tail[2] = template.ColorG;
+        tail[3] = template.ColorB;
+        BinaryPrimitives.WriteUInt16BigEndian(tail[4..], Clamp16(template.ImagePosition.X));
+        BinaryPrimitives.WriteUInt16BigEndian(tail[6..], Clamp16(template.ImagePosition.Y));
+        BinaryPrimitives.WriteUInt16BigEndian(tail[8..], Clamp16(template.DataPosition.X));
+        BinaryPrimitives.WriteUInt16BigEndian(tail[10..], Clamp16(template.DataPosition.Y));
+        tail[12] = (byte)(template.Enabled ? 1 : 0);
         WriteFrame(ProtocolFrames.CmdFrame(Opcode.SetImageTpl, tail));
     }
 
@@ -197,32 +198,27 @@ public sealed class PanelController(II2cBus bus)
         };
     }
 
-    private static byte High(int v) => (byte)((v >> 8) & 0xFF);
-
-    private static byte Low(int v) => (byte)(v & 0xFF);
-
     private static byte Clamp8(int v) => (byte)Math.Clamp(v, 0, 255);
 
+    private static ushort Clamp16(int v) => (ushort)Math.Clamp(v, 0, ushort.MaxValue);
+
     /// <summary>
-    /// Write the upload frames with the pacing the panel firmware needs.
+    /// Write the upload frames with the pacing the panel firmware needs, keyed
+    /// off each frame's <see cref="UploadFrameKind"/> (never its byte content).
     /// </summary>
-    public void SendUpload(IReadOnlyList<byte[]> frames, int chunkDelayMs = DefaultChunkDelayMs)
+    public async Task SendUploadAsync(IReadOnlyList<UploadFrame> frames,
+        int chunkDelayMs = DefaultChunkDelayMs, CancellationToken cancellationToken = default)
     {
-        foreach (var fr in frames)
+        foreach (var frame in frames)
         {
-            WriteFrame(fr);
-            if (fr[0] == Opcode.UploadMarker && fr[5] == 0x01)
+            WriteFrame(frame.Data);
+            int delayMs = frame.Kind switch
             {
-                Thread.Sleep(PaceBeginMs);
-            }
-            else if (fr[0] == Opcode.UploadHeader)
-            {
-                Thread.Sleep(PaceHeaderMs);
-            }
-            else
-            {
-                Thread.Sleep(chunkDelayMs);
-            }
+                UploadFrameKind.Begin => PaceBeginMs,
+                UploadFrameKind.Header => PaceHeaderMs,
+                _ => chunkDelayMs,
+            };
+            await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -231,15 +227,16 @@ public sealed class PanelController(II2cBus bus)
     /// streams to a live framebuffer, so SetMode goes BEFORE the upload;
     /// image/text store to numbered framebuffers, so SetMode goes AFTER.
     /// </summary>
-    public void UploadContent(IReadOnlyList<byte[]> frames, int mode, bool isGif,
-        bool setDisplayMode = true, int chunkDelayMs = DefaultChunkDelayMs)
+    public async Task UploadContentAsync(IReadOnlyList<UploadFrame> frames, int mode, bool isGif,
+        bool setDisplayMode = true, int chunkDelayMs = DefaultChunkDelayMs,
+        CancellationToken cancellationToken = default)
     {
         if (isGif && setDisplayMode)
         {
             SetMode(mode);
-            Thread.Sleep(200);
+            await Task.Delay(GifModeSettleMs, cancellationToken).ConfigureAwait(false);
         }
-        SendUpload(frames, chunkDelayMs);
+        await SendUploadAsync(frames, chunkDelayMs, cancellationToken).ConfigureAwait(false);
         if (!isGif && setDisplayMode)
         {
             SetMode(mode);

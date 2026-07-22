@@ -87,24 +87,11 @@ public static class ImageContent
         var data = bmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
         try
         {
+            // 320px * 3 bytes = 960, already 4-byte aligned, so GDI adds no row padding.
             int stride = data.Stride;
-            var raw = new byte[stride * Panel.Height];
-            Marshal.Copy(data.Scan0, raw, 0, raw.Length);
-
-            var rgb = new byte[Panel.FramePixels * 3];
-            int di = 0;
-            for (int y = 0; y < Panel.Height; y++)
-            {
-                int row = y * stride;
-                for (int x = 0; x < Panel.Width; x++)
-                {
-                    int p = row + (x * 3);
-                    rgb[di++] = raw[p + 2]; // R (GDI stores BGR)
-                    rgb[di++] = raw[p + 1]; // G
-                    rgb[di++] = raw[p];     // B
-                }
-            }
-            return Rgb565Encoder.Encode(rgb);
+            var bgr = new byte[stride * Panel.Height];
+            Marshal.Copy(data.Scan0, bgr, 0, bgr.Length);
+            return Rgb565Encoder.EncodeBgr(bgr);
         }
         finally
         {

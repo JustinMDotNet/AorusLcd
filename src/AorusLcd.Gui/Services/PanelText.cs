@@ -50,14 +50,6 @@ public static class PanelText
             handle.Free();
         }
 
-        var rgb = new byte[Panel.FramePixels * 3];
-        int di = 0;
-        for (int i = 0; i < bgra.Length; i += 4)
-        {
-            rgb[di++] = bgra[i + 2];
-            rgb[di++] = bgra[i + 1];
-            rgb[di++] = bgra[i];
-        }
-        return Rgb565Encoder.Encode(rgb);
+        return Rgb565Encoder.EncodeBgra(bgra);
     }
 }

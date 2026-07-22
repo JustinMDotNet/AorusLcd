@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 namespace AorusLcd.Core;
 
 /// <summary>
@@ -9,62 +11,65 @@ namespace AorusLcd.Core;
 public static class GifPayload
 {
     private const int FormatRle = 3;
+    private const int TableEntrySize = 10;
 
     /// <summary>[frameCount:2 LE] + one 10-byte entry per frame.</summary>
     public static byte[] FrameTable(IReadOnlyList<int> sizes, int w = Panel.Width,
         int h = Panel.Height, int fmt = FormatRle)
     {
-        int n = sizes.Count;
-        var outBuf = new List<byte>(2 + (10 * n));
-        WriteLe16(outBuf, (ushort)n);
-        int cum = 2 + (10 * n);
-        foreach (int s in sizes)
-        {
-            cum += s;
-            WriteLe32(outBuf, (uint)(cum - 1));
-            WriteLe16(outBuf, (ushort)w);
-            WriteLe16(outBuf, (ushort)h);
-            WriteLe16(outBuf, (ushort)fmt);
-        }
-        return outBuf.ToArray();
+        var table = new byte[2 + (TableEntrySize * sizes.Count)];
+        WriteTable(table, sizes, w, h, fmt);
+        return table;
     }
 
     /// <summary>
-    /// RLE-compress each frame and assemble <c>frameCount + table + blobs</c>.
-    /// The returned delay unit is milliseconds (raw, as GCC stores it).
+    /// RLE-compress each frame and assemble <c>frameCount + table + blobs</c>
+    /// into a single right-sized buffer. The returned delay unit is
+    /// milliseconds (raw, as GCC stores it).
     /// </summary>
     public static (byte[] Payload, int FrameCount, int DelayMs) Build(
         IReadOnlyList<byte[]> le565Frames, IReadOnlyList<int> frameDelaysMs, int? delayOverride)
     {
-        var rle = new List<byte[]>(le565Frames.Count);
-        foreach (var frame in le565Frames)
+        int n = le565Frames.Count;
+        var blobs = new byte[n][];
+        var sizes = new int[n];
+        int blobTotal = 0;
+        for (int i = 0; i < n; i++)
         {
-            rle.Add(RleEncoder.EncodeFrame(frame));
+            blobs[i] = RleEncoder.EncodeFrame(le565Frames[i]);
+            sizes[i] = blobs[i].Length;
+            blobTotal += sizes[i];
+        }
+
+        int tableSize = 2 + (TableEntrySize * n);
+        var payload = new byte[tableSize + blobTotal];
+        WriteTable(payload, sizes, Panel.Width, Panel.Height, FormatRle);
+        int offset = tableSize;
+        foreach (var blob in blobs)
+        {
+            blob.CopyTo(payload.AsSpan(offset));
+            offset += blob.Length;
         }
 
         int delay = delayOverride
             ?? Math.Min(255, Math.Max(1, (int)Math.Round(frameDelaysMs.Average())));
+        return (payload, n, delay);
+    }
 
-        var payload = new List<byte>();
-        payload.AddRange(FrameTable(rle.ConvertAll(r => r.Length)));
-        foreach (var blob in rle)
+    private static void WriteTable(Span<byte> dst, IReadOnlyList<int> sizes, int w, int h, int fmt)
+    {
+        int n = sizes.Count;
+        BinaryPrimitives.WriteUInt16LittleEndian(dst, (ushort)n);
+        int cum = 2 + (TableEntrySize * n);
+        int pos = 2;
+        for (int i = 0; i < n; i++)
         {
-            payload.AddRange(blob);
+            cum += sizes[i];
+            BinaryPrimitives.WriteUInt32LittleEndian(dst[pos..], (uint)(cum - 1)); // inclusive end offset
+            BinaryPrimitives.WriteUInt16LittleEndian(dst[(pos + 4)..], (ushort)w);
+            BinaryPrimitives.WriteUInt16LittleEndian(dst[(pos + 6)..], (ushort)h);
+            BinaryPrimitives.WriteUInt16LittleEndian(dst[(pos + 8)..], (ushort)fmt);
+            pos += TableEntrySize;
         }
-        return (payload.ToArray(), le565Frames.Count, delay);
-    }
-
-    private static void WriteLe16(List<byte> buf, ushort value)
-    {
-        buf.Add((byte)(value & 0xFF));
-        buf.Add((byte)((value >> 8) & 0xFF));
-    }
-
-    private static void WriteLe32(List<byte> buf, uint value)
-    {
-        buf.Add((byte)(value & 0xFF));
-        buf.Add((byte)((value >> 8) & 0xFF));
-        buf.Add((byte)((value >> 16) & 0xFF));
-        buf.Add((byte)((value >> 24) & 0xFF));
     }
 }

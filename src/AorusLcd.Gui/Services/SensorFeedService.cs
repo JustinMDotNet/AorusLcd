@@ -15,9 +15,10 @@ namespace AorusLcd.Gui.Services;
 /// single always-on widget refreshes ~1 s so its number looks live, while a
 /// rotating dashboard only needs a fresh value each time a widget appears, so
 /// it polls at the rotation interval. Errors are surfaced via <see cref="Error"/>
-/// but never crash the app.
+/// but never crash the app. The NVML source is owned by the loop and disposed
+/// only after the loop has exited, so shutdown never disposes it mid-read.
 /// </summary>
-public sealed class SensorFeedService(HardwareService hardware) : IDisposable
+public sealed class SensorFeedService(HardwareService hardware) : IAsyncDisposable
 {
     private const int MinPollMs = 1000;
     private const int MaxPollMs = 5000;
@@ -25,7 +26,6 @@ public sealed class SensorFeedService(HardwareService hardware) : IDisposable
     private readonly HardwareService _hardware = hardware;
     private CancellationTokenSource? _cts;
     private Task? _loop;
-    private ISensorSource? _sensors;
     private volatile int _pollIntervalMs = MinPollMs;
 
     public bool IsRunning => _loop is { IsCompleted: false };
@@ -50,60 +50,81 @@ public sealed class SensorFeedService(HardwareService hardware) : IDisposable
         return Math.Clamp(ms, MinPollMs, MaxPollMs);
     }
 
-    public void Start(int widgetCount, int rotationIntervalSeconds)
+    /// <summary>
+    /// Start (or re-tune) the feed. Constructs the NVML source up front so an
+    /// unavailable driver surfaces immediately (before the dashboard is trusted).
+    /// </summary>
+    public void Start(int widgetCount, int rotationIntervalSeconds, uint? pciBusId)
     {
         _pollIntervalMs = ComputePollInterval(widgetCount, rotationIntervalSeconds);
         if (IsRunning)
         {
             return; // cadence updated live; loop picks it up on its next delay
         }
-        _sensors = new NvmlSensorSource();
+        var sensors = new NvmlSensorSource(pciBusId); // may throw if NVML is unavailable
         _cts = new CancellationTokenSource();
-        _loop = Task.Run(() => RunAsync(_cts.Token));
+        _loop = Task.Run(() => RunAsync(sensors, _cts.Token));
     }
 
-    public void Stop()
+    /// <summary>Stop the feed and await the loop's clean exit (never blocks a thread).</summary>
+    public async Task StopAsync()
     {
-        _cts?.Cancel();
-        try
+        if (_cts is null)
         {
-            _loop?.Wait(2000);
+            return;
         }
-        catch (AggregateException)
+        await _cts.CancelAsync().ConfigureAwait(false);
+        if (_loop is not null)
         {
-            // cancellation
+            try
+            {
+                await _loop.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // expected on cancellation
+            }
         }
         _loop = null;
-        _cts?.Dispose();
+        _cts.Dispose();
         _cts = null;
-        _sensors?.Dispose();
-        _sensors = null;
     }
 
-    private async Task RunAsync(CancellationToken token)
+    private async Task RunAsync(ISensorSource sensors, CancellationToken token)
     {
-        while (!token.IsCancellationRequested)
+        try
         {
-            try
+            while (!token.IsCancellationRequested)
             {
-                var sample = _sensors!.Read();
-                _hardware.SendSensorFeed(sample);
-            }
-            catch (Exception e)
-            {
-                Error?.Invoke(e.Message);
-            }
+                try
+                {
+                    var sample = sensors.Read();
+                    await _hardware.SendSensorFeedAsync(sample, token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception e)
+                {
+                    Error?.Invoke(e.Message);
+                }
 
-            try
-            {
-                await Task.Delay(_pollIntervalMs, token);
+                try
+                {
+                    await Task.Delay(_pollIntervalMs, token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
             }
-            catch (TaskCanceledException)
-            {
-                break;
-            }
+        }
+        finally
+        {
+            sensors.Dispose();
         }
     }
 
-    public void Dispose() => Stop();
+    public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
 }

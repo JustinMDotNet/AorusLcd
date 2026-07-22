@@ -44,14 +44,32 @@ public class ProtocolTests
     }
 
     [Fact]
-    public void BuildUpload_BeginHeaderChunksEnd()
+    public void BuildUpload_TagsFramesByRole()
     {
         var frames = ProtocolFrames.BuildUpload(new byte[256], Panel.FramebufferStatic);
-        Assert.Equal(Opcode.UploadMarker, frames[0][0]);
-        Assert.Equal(1, frames[0][5]);
-        Assert.Equal(Opcode.UploadHeader, frames[1][0]);
-        Assert.Equal(Opcode.UploadMarker, frames[^1][0]);
-        Assert.Equal(2, frames[^1][5]);
+        Assert.Equal(UploadFrameKind.Begin, frames[0].Kind);
+        Assert.Equal(Opcode.UploadMarker, frames[0].Data[0]);
+        Assert.Equal(1, frames[0].Data[5]);
+        Assert.Equal(UploadFrameKind.Header, frames[1].Kind);
+        Assert.Equal(Opcode.UploadHeader, frames[1].Data[0]);
+        Assert.Equal(UploadFrameKind.Chunk, frames[2].Kind);
+        Assert.Equal(UploadFrameKind.End, frames[^1].Kind);
+        Assert.Equal(Opcode.UploadMarker, frames[^1].Data[0]);
+        Assert.Equal(2, frames[^1].Data[5]);
+    }
+
+    [Fact]
+    public void BuildUpload_PayloadAliasingControlOpcodesStaysChunk()
+    {
+        // Payload full of 0xF1/0xF2 (the header/marker opcodes) must never be
+        // misclassified — every middle frame is a Chunk regardless of content.
+        var payload = new byte[512];
+        Array.Fill(payload, (byte)0xF1);
+        var frames = ProtocolFrames.BuildUpload(payload, Panel.FramebufferStatic);
+        for (int i = 2; i < frames.Count - 1; i++)
+        {
+            Assert.Equal(UploadFrameKind.Chunk, frames[i].Kind);
+        }
     }
 
     [Fact]

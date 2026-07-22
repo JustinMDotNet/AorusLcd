@@ -7,11 +7,30 @@ public readonly record struct RgbColor(byte R, byte G, byte B)
 
     /// <summary>Parse an <c>RRGGBB</c> hex string (leading '#' optional).</summary>
     public static RgbColor Parse(string hex)
+        => TryParse(hex, out var color)
+            ? color
+            : throw new FormatException($"'{hex}' is not an RRGGBB hex color.");
+
+    /// <summary>Try to parse an <c>RRGGBB</c> hex string (leading '#' optional).</summary>
+    public static bool TryParse(string? hex, out RgbColor color)
     {
-        hex = hex.TrimStart('#');
-        return new RgbColor(
-            Convert.ToByte(hex[..2], 16),
-            Convert.ToByte(hex.Substring(2, 2), 16),
-            Convert.ToByte(hex.Substring(4, 2), 16));
+        color = Black;
+        if (hex is null)
+        {
+            return false;
+        }
+        var s = hex.AsSpan().TrimStart('#');
+        if (s.Length != 6)
+        {
+            return false;
+        }
+        if (byte.TryParse(s[..2], System.Globalization.NumberStyles.HexNumber, null, out byte r)
+            && byte.TryParse(s[2..4], System.Globalization.NumberStyles.HexNumber, null, out byte g)
+            && byte.TryParse(s[4..], System.Globalization.NumberStyles.HexNumber, null, out byte b))
+        {
+            color = new RgbColor(r, g, b);
+            return true;
+        }
+        return false;
     }
 }

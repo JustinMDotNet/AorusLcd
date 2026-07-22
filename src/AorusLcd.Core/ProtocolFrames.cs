@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 namespace AorusLcd.Core;
 
 /// <summary>
@@ -39,12 +41,11 @@ public static class ProtocolFrames
         var h = new byte[FrameSize];
         h[0] = Opcode.UploadHeader;
         Opcode.Magic.CopyTo(h, 1);
-        WriteBigEndian(h, 5, fbAddr);                 // framebuffer target
-        h[9] = flag;                                  // 1 = static/text, 2 = gif
-        WriteBigEndian(h, 10, nchunks);               // chunk count
-        h[14] = (byte)((nframes >> 8) & 0xFF);        // frame count (2 bytes, big)
-        h[15] = (byte)(nframes & 0xFF);
-        h[16] = (byte)Math.Min(255, delay);           // per-frame delay (ms, clamped)
+        BinaryPrimitives.WriteUInt32BigEndian(h.AsSpan(5), fbAddr);   // framebuffer target
+        h[9] = flag;                                                 // 1 = static/text, 2 = gif
+        BinaryPrimitives.WriteUInt32BigEndian(h.AsSpan(10), nchunks); // chunk count
+        BinaryPrimitives.WriteUInt16BigEndian(h.AsSpan(14), nframes); // frame count
+        h[16] = (byte)Math.Min(255, delay);                          // per-frame delay (ms, clamped)
         h[17] = mode ?? (byte)(usize >= 20480 ? 2 : 1);
         h[18] = 0;
         return h;
@@ -72,26 +73,24 @@ public static class ProtocolFrames
         return outList;
     }
 
-    /// <summary>Full upload frame list: BEGIN -> F1 header -> chunks -> END.</summary>
-    public static List<byte[]> BuildUpload(ReadOnlySpan<byte> pdata, uint fbAddr,
+    /// <summary>
+    /// Full upload sequence as role-tagged frames: BEGIN -> F1 header -> chunks
+    /// -> END. Callers pace each frame by its <see cref="UploadFrameKind"/>.
+    /// </summary>
+    public static List<UploadFrame> BuildUpload(ReadOnlySpan<byte> pdata, uint fbAddr,
         byte flag = 1, ushort nframes = 0, int delay = 0, byte? mode = null)
     {
         uint nchunks = (uint)(pdata.Length / FrameSize + 1);
-        var frames = new List<byte[]>
+        var frames = new List<UploadFrame>((int)nchunks + 3)
         {
-            F2Frame(1),
-            MakeF1Header(fbAddr, nchunks, nframes, delay, pdata.Length, flag, mode),
+            new(UploadFrameKind.Begin, F2Frame(1)),
+            new(UploadFrameKind.Header, MakeF1Header(fbAddr, nchunks, nframes, delay, pdata.Length, flag, mode)),
         };
-        frames.AddRange(ChunkPayload(pdata));
-        frames.Add(F2Frame(2));
+        foreach (var chunk in ChunkPayload(pdata))
+        {
+            frames.Add(new UploadFrame(UploadFrameKind.Chunk, chunk));
+        }
+        frames.Add(new UploadFrame(UploadFrameKind.End, F2Frame(2)));
         return frames;
-    }
-
-    private static void WriteBigEndian(byte[] buf, int offset, uint value)
-    {
-        buf[offset] = (byte)((value >> 24) & 0xFF);
-        buf[offset + 1] = (byte)((value >> 16) & 0xFF);
-        buf[offset + 2] = (byte)((value >> 8) & 0xFF);
-        buf[offset + 3] = (byte)(value & 0xFF);
     }
 }

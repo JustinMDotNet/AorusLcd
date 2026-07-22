@@ -1,3 +1,7 @@
+using System.Buffers;
+using System.Buffers.Binary;
+using System.Runtime.InteropServices;
+
 namespace AorusLcd.Core;
 
 /// <summary>
@@ -10,20 +14,34 @@ namespace AorusLcd.Core;
 /// </summary>
 public static class RleEncoder
 {
+    private const int MaxWindow = 0x7FFF;
+
     /// <summary>RLE-encode one little-endian RGB565 frame.</summary>
     public static byte[] EncodeFrame(ReadOnlySpan<byte> px)
     {
-        int n = px.Length / 2; // pixel count
+        // Worst case (incompressible): every window is one literal, adding a
+        // 2-byte head per window on top of the pixel bytes.
+        int n = px.Length / 2;
+        int worstCase = px.Length + (((n / MaxWindow) + 1) * 2);
+        var writer = new ArrayBufferWriter<byte>(Math.Max(worstCase, 1));
+        EncodeInto(px, writer);
+        return writer.WrittenSpan.ToArray();
+    }
+
+    /// <summary>RLE-encode one frame directly into <paramref name="writer"/>.</summary>
+    public static void EncodeInto(ReadOnlySpan<byte> px, IBufferWriter<byte> writer)
+    {
+        var pixels = MemoryMarshal.Cast<byte, ushort>(px); // host is little-endian, matching the frame
+        int n = pixels.Length;
         if (n < 3)
         {
             throw new ArgumentException("frame too small for Compress_RLE semantics", nameof(px));
         }
 
-        var outBuf = new List<byte>(px.Length);
         int i = 0;
         while (i < n)
         {
-            int wend = i + Math.Min(0x7FFF, n - i); // window [i, wend)
+            int wend = i + Math.Min(MaxWindow, n - i); // window [i, wend)
             int wlen = wend - i;
             int diff, same;
 
@@ -43,11 +61,11 @@ public static class RleEncoder
                         same = 0;
                         break;
                     }
-                    if (Pixel(px, j) == Pixel(px, j + 1) && Pixel(px, j + 1) == Pixel(px, j + 2))
+                    if (pixels[j] == pixels[j + 1] && pixels[j + 1] == pixels[j + 2])
                     {
                         int rs = j;
                         j += 2;
-                        while (j < wend - 1 && Pixel(px, j) == Pixel(px, j + 1))
+                        while (j < wend - 1 && pixels[j] == pixels[j + 1])
                         {
                             j++;
                         }
@@ -61,25 +79,22 @@ public static class RleEncoder
 
             if (diff != 0)
             {
-                WriteLe16(outBuf, (ushort)diff);
-                outBuf.AddRange(px.Slice(2 * i, 2 * diff));
+                WriteHead(writer, (ushort)diff);
+                writer.Write(px.Slice(2 * i, 2 * diff));
             }
             if (same != 0)
             {
-                WriteLe16(outBuf, (ushort)(same | 0x8000));
-                outBuf.AddRange(px.Slice(2 * (i + diff), 2));
+                WriteHead(writer, (ushort)(same | 0x8000));
+                writer.Write(px.Slice(2 * (i + diff), 2));
             }
             i += diff + same;
         }
-        return outBuf.ToArray();
     }
 
-    private static ushort Pixel(ReadOnlySpan<byte> px, int index)
-        => (ushort)(px[2 * index] | (px[(2 * index) + 1] << 8));
-
-    private static void WriteLe16(List<byte> buf, ushort value)
+    private static void WriteHead(IBufferWriter<byte> writer, ushort head)
     {
-        buf.Add((byte)(value & 0xFF));
-        buf.Add((byte)((value >> 8) & 0xFF));
+        var span = writer.GetSpan(2);
+        BinaryPrimitives.WriteUInt16LittleEndian(span, head);
+        writer.Advance(2);
     }
 }

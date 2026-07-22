@@ -172,10 +172,10 @@ public partial class MainViewModel : ViewModelBase
     // ---- commands ----------------------------------------------------------
 
     [RelayCommand]
-    private Task RefreshStatusAsync() => RunAsync("Reading panel status…", () =>
+    private Task RefreshStatusAsync() => RunAsync("Reading panel status…", async () =>
     {
-        var gpuName = _hw.Connect();
-        var status = _hw.GetStatus();
+        var gpuName = await _hw.ConnectAsync();
+        var status = await _hw.GetStatusAsync();
         Dispatcher.UIThread.Post(() =>
         {
             GpuName = gpuName;
@@ -203,7 +203,9 @@ public partial class MainViewModel : ViewModelBase
         ImagePath = path;
         try
         {
+            var previous = PreviewImage;
             PreviewImage = new Bitmap(path);
+            previous?.Dispose();
             StatusMessage = $"Loaded {path}";
         }
         catch (Exception e)
@@ -223,10 +225,14 @@ public partial class MainViewModel : ViewModelBase
         var path = ImagePath;
         bool clear = ClearSensorsOnSend;
         bool save = SaveOnSend;
-        return RunAsync("Uploading image…", () =>
+        return RunAsync("Uploading image…", async () =>
         {
-            var le565 = PanelImage.LoadLe565(path);
-            _hw.SendImage(le565, clear, save);
+            var le565 = await Task.Run(() => PanelImage.LoadLe565(path));
+            await _hw.SendImageAsync(le565, clear, save);
+            if (clear)
+            {
+                await StopFeedAsync(); // the dashboard was cleared; stop feeding it
+            }
             return "Image sent" + (clear ? ", sensors off" : "") + (save ? ", saved" : "") + ".";
         });
     }
@@ -238,15 +244,28 @@ public partial class MainViewModel : ViewModelBase
         int interval = SensorInterval;
         int widgetCount = CountFlags(elements);
         bool save = SaveOnSend;
-        return RunAsync("Applying sensor dashboard…", () =>
+        return RunAsync("Applying sensor dashboard…", async () =>
         {
-            _hw.SetSensors(elements, elements == LcdDisplayElements.None ? 0 : interval, save);
             if (elements == LcdDisplayElements.None)
             {
-                StopFeed();
+                await StopFeedAsync();
+                await _hw.SetSensorsAsync(LcdDisplayElements.None, 0, save);
                 return "Sensor dashboard off.";
             }
+
+            // Validate NVML + connection before enabling the dashboard, so we
+            // never leave the panel showing widgets we can't feed.
+            await _hw.ConnectAsync();
             int pollMs = StartFeed(widgetCount, interval);
+            try
+            {
+                await _hw.SetSensorsAsync(elements, interval, save);
+            }
+            catch
+            {
+                await StopFeedAsync();
+                throw;
+            }
             string cadence = widgetCount <= 1
                 ? $"polling {pollMs / 1000.0:0.#}s (live)"
                 : $"polling {pollMs / 1000.0:0.#}s (per {interval}s rotation)";
@@ -259,42 +278,42 @@ public partial class MainViewModel : ViewModelBase
     {
         ClearAllSensorToggles();
         bool save = SaveOnSend;
-        return RunAsync("Disabling sensor dashboard…", () =>
+        return RunAsync("Disabling sensor dashboard…", async () =>
         {
-            StopFeed();
-            _hw.SetSensors(LcdDisplayElements.None, 0, save);
+            await StopFeedAsync();
+            await _hw.SetSensorsAsync(LcdDisplayElements.None, 0, save);
             return "Sensor dashboard off.";
         });
     }
 
     [RelayCommand]
-    private Task PanelOnAsync() => RunAsync("Turning panel on…", () =>
+    private Task PanelOnAsync() => RunAsync("Turning panel on…", async () =>
     {
-        _hw.SetPanelPower(true);
+        await _hw.SetPanelPowerAsync(true);
         return "Panel on.";
     });
 
     [RelayCommand]
-    private Task PanelOffAsync() => RunAsync("Turning panel off…", () =>
+    private Task PanelOffAsync() => RunAsync("Turning panel off…", async () =>
     {
-        _hw.SetPanelPower(false);
+        await _hw.SetPanelPowerAsync(false);
         return "Panel off.";
     });
 
     [RelayCommand]
-    private Task SaveToPanelAsync() => RunAsync("Saving to panel NVRAM…", () =>
+    private Task SaveToPanelAsync() => RunAsync("Saving to panel NVRAM…", async () =>
     {
-        _hw.Save();
+        await _hw.SaveAsync();
         return "Saved to panel NVRAM (survives reboot).";
     });
 
     [RelayCommand]
-    private Task SetModeAsync(ModePreset preset) => RunAsync($"Switching to {preset.Name}…", () =>
+    private Task SetModeAsync(ModePreset preset) => RunAsync($"Switching to {preset.Name}…", async () =>
     {
-        _hw.SetMode(preset.Mode);
+        await _hw.SetModeAsync(preset.Mode);
         if (SaveOnSend)
         {
-            _hw.Save();
+            await _hw.SaveAsync();
         }
         return $"Mode: {preset.Name}.";
     });
@@ -313,10 +332,14 @@ public partial class MainViewModel : ViewModelBase
         Color bg = SafeColor(TextBgHex, Colors.Black);
         bool clear = ClearSensorsOnSend;
         bool save = SaveOnSend;
-        return RunAsync("Rendering and sending text…", () =>
+        return RunAsync("Rendering and sending text…", async () =>
         {
-            var le565 = PanelText.RenderLe565(text, size, fg, bg);
-            _hw.SendText(le565, clear, save);
+            var le565 = await Task.Run(() => PanelText.RenderLe565(text, size, fg, bg));
+            await _hw.SendTextAsync(le565, clear, save);
+            if (clear)
+            {
+                await StopFeedAsync(); // the dashboard was cleared; stop feeding it
+            }
             return $"Text \"{text}\" sent" + (save ? ", saved" : "") + ".";
         });
     }
@@ -346,10 +369,10 @@ public partial class MainViewModel : ViewModelBase
         }
         string path = GifPath;
         bool save = SaveOnSend;
-        return RunAsync("Decoding and sending GIF…", () =>
+        return RunAsync("Decoding and sending GIF…", async () =>
         {
-            var (frames, delays) = GifDecoder.DecodeLe565(path);
-            _hw.SendGif(frames, delays, save);
+            var (frames, delays) = await Task.Run(() => GifDecoder.DecodeLe565(path));
+            await _hw.SendGifAsync(frames, delays, save);
             return $"GIF sent ({frames.Count} frames)" + (save ? ", saved" : "") + ".";
         });
     }
@@ -370,9 +393,9 @@ public partial class MainViewModel : ViewModelBase
         }
         int interval = CarouselInterval;
         bool save = SaveOnSend;
-        return RunAsync("Applying carousel…", () =>
+        return RunAsync("Applying carousel…", async () =>
         {
-            _hw.SetCarousel(modes, interval, save);
+            await _hw.SetCarouselAsync(modes, interval, save);
             return $"Carousel: [{string.Join(",", modes)}] every {interval}s.";
         });
     }
@@ -380,12 +403,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private Task ApplyRgbAsync()
     {
-        RgbColor color;
-        try
-        {
-            color = RgbColor.Parse(RgbColorHex);
-        }
-        catch (Exception)
+        if (!RgbColor.TryParse(RgbColorHex, out var color))
         {
             StatusMessage = "Invalid color — use RRGGBB hex.";
             return Task.CompletedTask;
@@ -393,30 +411,30 @@ public partial class MainViewModel : ViewModelBase
         var mode = SelectedRgbMode;
         byte brightness = (byte)(Math.Clamp(RgbBrightness, 0, 100) * RgbFusion2.BrightnessMax / 100);
         byte speed = (byte)Math.Clamp(RgbSpeed, RgbFusion2.SpeedSlowest, RgbFusion2.SpeedFastest);
-        return RunAsync("Applying RGB…", () =>
+        return RunAsync("Applying RGB…", async () =>
         {
             if (mode == "Static")
             {
-                _hw.SetRgbStatic(color, brightness);
+                await _hw.SetRgbStaticAsync(color, brightness);
             }
             else
             {
-                _hw.SetRgbEffect(MapRgbMode(mode), [color], speed, brightness);
+                await _hw.SetRgbEffectAsync(MapRgbMode(mode), [color], speed, brightness);
             }
             return $"RGB: {mode} #{RgbColorHex} brightness {RgbBrightness}%.";
         });
     }
 
     [RelayCommand]
-    private Task RgbOffAsync() => RunAsync("Turning RGB off…", () =>
+    private Task RgbOffAsync() => RunAsync("Turning RGB off…", async () =>
     {
-        _hw.RgbOff();
+        await _hw.RgbOffAsync();
         return "RGB off.";
     });
 
     // ---- helpers -----------------------------------------------------------
 
-    private async Task RunAsync(string busyMessage, Func<string> action)
+    private async Task RunAsync(string busyMessage, Func<Task<string>> action)
     {
         if (IsBusy)
         {
@@ -426,8 +444,7 @@ public partial class MainViewModel : ViewModelBase
         StatusMessage = busyMessage;
         try
         {
-            var result = await Task.Run(action);
-            StatusMessage = result;
+            StatusMessage = await action();
         }
         catch (Exception e)
         {
@@ -469,31 +486,26 @@ public partial class MainViewModel : ViewModelBase
 
     private int StartFeed(int widgetCount, int rotationIntervalSeconds)
     {
-        _feed.Start(widgetCount, rotationIntervalSeconds);
+        _feed.Start(widgetCount, rotationIntervalSeconds, _hw.PanelBusId);
         Dispatcher.UIThread.Post(() => LiveFeedRunning = _feed.IsRunning);
         return _feed.PollIntervalMs;
     }
 
-    private void StopFeed()
+    private async Task StopFeedAsync()
     {
-        _feed.Stop();
+        await _feed.StopAsync();
         Dispatcher.UIThread.Post(() => LiveFeedRunning = _feed.IsRunning);
     }
 
     private static int CountFlags(LcdDisplayElements elements)
-    {
-        int count = 0;
-        var v = (uint)elements;
-        while (v != 0)
-        {
-            count += (int)(v & 1);
-            v >>= 1;
-        }
-        return count;
-    }
+        => System.Numerics.BitOperations.PopCount((uint)elements);
 
     /// <summary>Stop the background feed cleanly on app shutdown.</summary>
-    public void Shutdown() => _feed.Dispose();
+    public async Task ShutdownAsync()
+    {
+        await _feed.DisposeAsync();
+        Dispatcher.UIThread.Post(() => PreviewImage?.Dispose());
+    }
 
     private static RgbMode MapRgbMode(string name) => name switch
     {
@@ -505,28 +517,10 @@ public partial class MainViewModel : ViewModelBase
     };
 
     private static IBrush SafeBrush(string hex)
-    {
-        try
-        {
-            var c = RgbColor.Parse(hex);
-            return new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B));
-        }
-        catch (Exception)
-        {
-            return Brushes.Transparent;
-        }
-    }
+        => RgbColor.TryParse(hex, out var c)
+            ? new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B))
+            : Brushes.Transparent;
 
     private static Color SafeColor(string hex, Color fallback)
-    {
-        try
-        {
-            var c = RgbColor.Parse(hex);
-            return Color.FromRgb(c.R, c.G, c.B);
-        }
-        catch (Exception)
-        {
-            return fallback;
-        }
-    }
+        => RgbColor.TryParse(hex, out var c) ? Color.FromRgb(c.R, c.G, c.B) : fallback;
 }

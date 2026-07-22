@@ -48,10 +48,13 @@ public partial class App : Application
 
     private void OnTrayShow(object? sender, EventArgs e) => ShowWindow();
 
-    private void OnTrayExit(object? sender, EventArgs e)
+    private async void OnTrayExit(object? sender, EventArgs e)
     {
         _exiting = true;
-        _viewModel?.Shutdown();
+        if (_viewModel is not null)
+        {
+            await _viewModel.ShutdownAsync();
+        }
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.Shutdown();

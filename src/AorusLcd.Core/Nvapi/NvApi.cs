@@ -16,6 +16,7 @@ internal static class NvApi
     private const uint IdInitialize = 0x0150E828;
     private const uint IdEnumPhysicalGpus = 0xE5AC921F;
     private const uint IdGetFullName = 0xCEEE8E9F;
+    private const uint IdGetBusId = 0x1BE0B8E5;
     private const uint IdI2CWriteEx = 0x283AC65A;
     private const uint IdI2CReadEx = 0x4D7B0709;
 
@@ -34,6 +35,9 @@ internal static class NvApi
     private delegate int GetFullNameDelegate(IntPtr gpu, [Out] byte[] name);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int GetBusIdDelegate(IntPtr gpu, out uint busId);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int I2CTransferDelegate(IntPtr gpu, ref NvI2cInfoV3 info, ref uint unknown);
 
     private static readonly Lazy<Bindings> Api = new(Resolve);
@@ -41,6 +45,7 @@ internal static class NvApi
     private sealed record Bindings(
         EnumPhysicalGpusDelegate EnumPhysicalGpus,
         GetFullNameDelegate GetFullName,
+        GetBusIdDelegate GetBusId,
         I2CTransferDelegate I2CWriteEx,
         I2CTransferDelegate I2CReadEx);
 
@@ -55,6 +60,7 @@ internal static class NvApi
         return new Bindings(
             GetDelegate<EnumPhysicalGpusDelegate>(IdEnumPhysicalGpus),
             GetDelegate<GetFullNameDelegate>(IdGetFullName),
+            GetDelegate<GetBusIdDelegate>(IdGetBusId),
             GetDelegate<I2CTransferDelegate>(IdI2CWriteEx),
             GetDelegate<I2CTransferDelegate>(IdI2CReadEx));
     }
@@ -93,6 +99,10 @@ internal static class NvApi
         int end = Array.IndexOf(name, (byte)0);
         return System.Text.Encoding.ASCII.GetString(name, 0, end < 0 ? name.Length : end);
     }
+
+    /// <summary>PCI bus number of the GPU, or null if NVAPI does not report it.</summary>
+    public static uint? GetBusId(IntPtr gpu)
+        => Api.Value.GetBusId(gpu, out uint busId) == 0 ? busId : null;
 
     public static int I2CWriteEx(IntPtr gpu, ref NvI2cInfoV3 info)
     {

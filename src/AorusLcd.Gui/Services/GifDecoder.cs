@@ -40,16 +40,5 @@ public static class GifDecoder
     }
 
     private static byte[] ToLe565(SKBitmap bgra)
-    {
-        var span = bgra.GetPixelSpan();
-        var rgb = new byte[Panel.FramePixels * 3];
-        int di = 0;
-        for (int i = 0; i + 3 < span.Length && di + 2 < rgb.Length; i += 4)
-        {
-            rgb[di++] = span[i + 2]; // R
-            rgb[di++] = span[i + 1]; // G
-            rgb[di++] = span[i];     // B
-        }
-        return Rgb565Encoder.Encode(rgb);
-    }
+        => Rgb565Encoder.EncodeBgra(bgra.GetPixelSpan());
 }
