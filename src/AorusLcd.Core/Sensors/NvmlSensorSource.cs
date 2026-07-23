@@ -124,6 +124,11 @@ public sealed class NvmlSensorSource : ISensorSource
     {
         if (_initialized)
         {
+            // Best-effort teardown: nvmlShutdown's status is intentionally
+            // discarded. This runs in Dispose with no logger in Core, and a
+            // shutdown failure is not actionable - the process is releasing the
+            // NVML handle regardless. The discard also documents that CA1806 is
+            // satisfied deliberately, not by oversight.
             _ = Nvml.Shutdown();
             _initialized = false;
         }
