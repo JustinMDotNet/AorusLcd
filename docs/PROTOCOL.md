@@ -323,7 +323,7 @@ generation** (name), keeping the legacy protocol for pre-Blackwell cards.
 [8]  0x00
 [9]  zone index
 [10] numColors    (>0 only for mode-specific colour effects)
-[12..] appended R,G,B triples for mode-specific effects (gaming layout)
+[11..] appended R,G,B triples for mode-specific effects
 ```
 
 The AORUS 5090/5080 Master "gaming" layout sends **6 zone packets** per update
@@ -333,9 +333,11 @@ Flashing `0x03`, DualFlashing `0x04`, ColorCycle `0x05`, Wave `0x06`, Gradient
 **write-only** (no read-back), so presence is a write-ACK probe and the
 generation is decided by name, never a read.
 
-> **Hardware validation status:** the packet format is a faithful port of
-> OpenRGB's tested driver and is covered by byte-layout unit tests, but has not
-> yet been confirmed on physical hardware from this project.
+> **Hardware validation status:** confirmed on a physical **RTX 5090 Master** -
+> detection (Blackwell @ `0x75`), static colours, the breathing effect, and the
+> multi-colour ColorShift cycle all render correctly. The mode-specific colour
+> offset was corrected from 12 to **11** during that testing (OpenRGB uses 11 for
+> its Master layouts).
 
 Code: `Rgb/RgbFusion2Blackwell.cs`, `Rgb/RgbFusion2BlackwellController.cs`,
 `Nvapi/RgbLocator.cs`.

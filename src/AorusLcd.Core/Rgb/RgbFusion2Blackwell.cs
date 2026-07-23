@@ -15,8 +15,9 @@ public static class RgbFusion2Blackwell
     // Zone packets sent per update for the AORUS 5090/5080 MASTER "gaming" layout.
     public const int GamingLayoutZones = 6;
 
-    // Colours in a mode-specific packet start here (gaming layout).
-    public const int ColorDataOffset = 12;
+    // Colours in a mode-specific packet start here. Offset 11 is validated on
+    // the RTX 5090 Master (OpenRGB's Master layouts also use 11, not 12).
+    public const int ColorDataOffset = 11;
 
     public const byte BrightnessMin = 0x01;
     public const byte BrightnessMax = 0x0A;

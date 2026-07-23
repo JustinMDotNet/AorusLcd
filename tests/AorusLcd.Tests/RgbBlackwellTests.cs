@@ -80,9 +80,10 @@ public class RgbBlackwellTests
 
         var p = bus.Writes[0];
         Assert.Equal(2, p[10]); // numColors
-        int off = RgbFusion2Blackwell.ColorDataOffset;
-        Assert.Equal(new byte[] { 0xAA, 0xBB, 0xCC }, p[off..(off + 3)]);
-        Assert.Equal(new byte[] { 0x11, 0x22, 0x33 }, p[(off + 3)..(off + 6)]);
+        // Mode-specific colours start at offset 11 (validated on the RTX 5090 Master).
+        Assert.Equal(11, RgbFusion2Blackwell.ColorDataOffset);
+        Assert.Equal(new byte[] { 0xAA, 0xBB, 0xCC }, p[11..14]);
+        Assert.Equal(new byte[] { 0x11, 0x22, 0x33 }, p[14..17]);
     }
 
     [Fact]
