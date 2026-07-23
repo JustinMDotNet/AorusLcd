@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Threading.Tasks;
 using AorusLcd.Gui.ViewModels;
 using Avalonia.Controls;
@@ -33,6 +32,6 @@ public partial class MainWindow : Window
             FileTypeFilter = [new FilePickerFileType("Files") { Patterns = patterns }],
         });
 
-        return files.FirstOrDefault()?.TryGetLocalPath();
+        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
     }
 }

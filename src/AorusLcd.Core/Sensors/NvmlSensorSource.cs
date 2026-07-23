@@ -124,7 +124,7 @@ public sealed class NvmlSensorSource : ISensorSource
     {
         if (_initialized)
         {
-            Nvml.Shutdown();
+            _ = Nvml.Shutdown();
             _initialized = false;
         }
     }

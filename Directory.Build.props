@@ -1,0 +1,42 @@
+<Project>
+
+  <!--
+    Repository-wide build settings and static-analysis hardening, applied to
+    every project in the solution.
+
+    Rationale: the individual .csproj files each enabled Nullable/ImplicitUsings
+    but nothing enforced the .NET code-quality analyzers or failed the build on
+    a warning, so analyzable defects and future regressions could land silently.
+  -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Reproducible builds. ContinuousIntegrationBuild is set from CI. -->
+    <Deterministic>true</Deterministic>
+
+    <!-- Turn on the .NET analyzers and treat warnings as errors so both existing
+         defects and future regressions fail the build (and CI) instead of being
+         ignored. AnalysisLevel is pinned to the current major so a newer SDK
+         cannot introduce brand-new rules that break CI without an explicit bump. -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>10.0-recommended</AnalysisLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- CA1822 ("member can be static") is intentionally not enforced: several
+         instance members are static-by-coincidence but instance-by-design
+         (e.g. the ServiceControl/HardwareService facades) or are data-bound from
+         XAML, where making them static would break the binding.
+         CA1859 (prefer concrete Task<bool> over Task) is not enforced either: the
+         HardwareService facade returns Task from helpers whose bool is a dummy
+         sentinel used only to reuse a generic overload; surfacing it up the whole
+         call chain would add a meaningless bool return, not real value. -->
+    <NoWarn>$(NoWarn);CA1822;CA1859</NoWarn>
+  </PropertyGroup>
+
+  <!-- Test methods use the idiomatic Given_When_Then underscore naming, so the
+       "no underscores in identifiers" rule does not apply to test projects. -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('Tests'))">
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
+</Project>
