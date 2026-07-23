@@ -35,11 +35,8 @@ jobs:
       - name: Test
         run: dotnet test --no-build -c Release --verbosity normal
 
-  # Validate the release-critical NativeAOT publish on every push/PR. The AOT
-  # service is only produced by the Release workflow (tag-triggered), so an
-  # AOT/trimming/interop regression would otherwise stay hidden until a release
-  # is cut. This job compiles it the same way Release does (needs the MSVC
-  # linker) so breakage surfaces here first. It does not upload artifacts.
+  # Validate the release-critical NativeAOT publish (only built by the tag-driven
+  # Release workflow otherwise) so AOT/interop regressions surface on every PR.
   aot-publish:
     runs-on: windows-latest
 
