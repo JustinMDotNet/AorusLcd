@@ -124,7 +124,9 @@ public sealed class NvmlSensorSource : ISensorSource
     {
         if (_initialized)
         {
-            Nvml.Shutdown();
+            // Best-effort teardown; the status is intentionally discarded
+            // (Dispose has no logger and a shutdown failure isn't actionable).
+            _ = Nvml.Shutdown();
             _initialized = false;
         }
     }

@@ -1,0 +1,24 @@
+<Project>
+
+  <!-- Repo-wide static-analysis hardening: enforce the .NET analyzers and fail
+       the build on warnings so defects and regressions can't land silently. -->
+  <PropertyGroup>
+    <!-- Reproducible builds; ContinuousIntegrationBuild is passed by CI. -->
+    <Deterministic>true</Deterministic>
+
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <!-- Pin AnalysisLevel so a newer SDK can't add rules that break CI. -->
+    <AnalysisLevel>10.0-recommended</AnalysisLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- CA1822: several members are instance-by-design (XAML-bound or facades).
+         CA1859: facade returns Task with a dummy bool; surfacing it adds no value. -->
+    <NoWarn>$(NoWarn);CA1822;CA1859</NoWarn>
+  </PropertyGroup>
+
+  <!-- Test methods use Given_When_Then naming, so CA1707 doesn't apply. -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('Tests'))">
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
+</Project>

@@ -68,4 +68,4 @@ public sealed record FeedConfig
 /// <summary>Source-generated JSON context so serialization works under NativeAOT.</summary>
 [JsonSourceGenerationOptions(WriteIndented = true)]
 [JsonSerializable(typeof(FeedConfig))]
-internal partial class FeedConfigJson : JsonSerializerContext;
+internal sealed partial class FeedConfigJson : JsonSerializerContext;
