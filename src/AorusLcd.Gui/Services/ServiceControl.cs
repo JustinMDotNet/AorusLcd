@@ -94,13 +94,21 @@ public sealed class ServiceControl
                 "AorusLcd.Service.exe was not found next to the app. Publish the service and place it beside the GUI.");
         string dir = Path.GetDirectoryName(InstalledExePath)!;
         string dataDir = Path.GetDirectoryName(dir)!; // %ProgramData%\AorusLcd
-        // Single elevated batch: stage the exe, grant the interactive user write
-        // access to the data dir (so the unelevated GUI can update feed.json),
-        // then create + start the service.
+        // Single elevated batch. Critical steps are chained with && so a failure
+        // short-circuits and surfaces as a non-zero exit code (mkdir is allowed to
+        // fail when the dir already exists, hence & there).
+        //
+        // SECURITY: the service runs as LocalSystem, so its binary under bin\ must
+        // NOT be writable by standard users (that would be a privilege-escalation
+        // vector). We grant the interactive Users group Modify with (OI)(NP) -
+        // object-inherit, no-propagate - so it applies only to files created
+        // directly in %ProgramData%\AorusLcd (i.e. feed.json, which the unelevated
+        // GUI must update) and is NOT inherited into the bin\ subfolder holding the
+        // service exe.
         string batch =
-            $"mkdir \"{dir}\" 2>nul & copy /y \"{source}\" \"{InstalledExePath}\" & " +
-            $"icacls \"{dataDir}\" /grant *S-1-5-32-545:(OI)(CI)M & " +
-            $"sc create {ServiceName} binPath= \"{InstalledExePath}\" start= auto DisplayName= \"AorusLcd Sensor Feed\" & " +
+            $"mkdir \"{dir}\" 2>nul & copy /y \"{source}\" \"{InstalledExePath}\" && " +
+            $"icacls \"{dataDir}\" /grant *S-1-5-32-545:(OI)(NP)M && " +
+            $"sc create {ServiceName} binPath= \"{InstalledExePath}\" start= auto DisplayName= \"AorusLcd Sensor Feed\" && " +
             $"sc start {ServiceName}";
         return RunElevatedCmdAsync(batch);
     }

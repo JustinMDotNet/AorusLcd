@@ -1,9 +1,7 @@
-using System;
-using System.Runtime.InteropServices;
+using System.IO;
 using AorusLcd.Core;
 using Avalonia;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 
 namespace AorusLcd.Gui.Services;
 
@@ -17,7 +15,11 @@ public static class PanelImage
     /// <summary>Load an image file and convert it to a 320x170 LE-RGB565 frame.</summary>
     public static byte[] LoadLe565(string path)
     {
-        using var source = new Bitmap(path);
+        using var stream = File.OpenRead(path);
+        // Decode size-constrained: a full-resolution photo would allocate
+        // hundreds of MB just to produce a 320x170 frame. 2x the panel width
+        // preserves downscale quality without decoding at native resolution.
+        using var source = Bitmap.DecodeToWidth(stream, Panel.Width * 2, BitmapInterpolationMode.HighQuality);
         return ToLe565(source);
     }
 
@@ -30,20 +32,6 @@ public static class PanelImage
         {
             ctx.DrawImage(source, new Rect(0, 0, Panel.Width, Panel.Height));
         }
-
-        int stride = Panel.Width * 4; // Bgra8888
-        var bgra = new byte[stride * Panel.Height];
-        var handle = GCHandle.Alloc(bgra, GCHandleType.Pinned);
-        try
-        {
-            rtb.CopyPixels(new PixelRect(0, 0, Panel.Width, Panel.Height),
-                handle.AddrOfPinnedObject(), bgra.Length, stride);
-        }
-        finally
-        {
-            handle.Free();
-        }
-
-        return Rgb565Encoder.EncodeBgra(bgra);
+        return PanelRender.ToLe565(rtb);
     }
 }

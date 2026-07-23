@@ -38,6 +38,14 @@ public sealed class PanelController(II2cBus bus)
     /// <summary>AA Save: persist the current LCD configuration to panel NVRAM.</summary>
     public void Save() => WriteFrame(ProtocolFrames.CmdFrame(Opcode.Save));
 
+    /// <summary>
+    /// Trigger the panel's built-in rainbow effect over the current text. Sent
+    /// after entering text mode, where the firmware colors the text by luminance.
+    /// It is the same 0xAA commit frame as <see cref="Save"/>; the effect is a
+    /// side effect of committing while in text mode.
+    /// </summary>
+    public void ApplyTextEffect() => WriteFrame(ProtocolFrames.CmdFrame(Opcode.Save));
+
     /// <summary>E5 SetMode: byte5 = mode+1. Mode 7 maps to internal 9 (GCC quirk).</summary>
     public void SetMode(int mode)
         => WriteFrame(ProtocolFrames.CmdFrame(Opcode.SetMode, [(byte)((mode == 7 ? 9 : mode) + 1)]));
@@ -46,7 +54,7 @@ public sealed class PanelController(II2cBus bus)
     /// E1 SetDisplay: enable/disable the panel's built-in sensor dashboard
     /// widgets and their rotation interval. Sends one flag byte per element
     /// (GpuTemp, GpuClock, GpuUsage, FanSpeed, RamClock, RamUsage, Fps, Tgp)
-    /// followed by the interval byte — the exact layout from ucVga.dll's
+    /// followed by the interval byte - the exact layout from ucVga.dll's
     /// GvLcdApi.SetDisplay. Pass <see cref="LcdDisplayElements.None"/> to turn
     /// the whole dashboard off (clean image with no overlay).
     /// </summary>
@@ -83,7 +91,7 @@ public sealed class PanelController(II2cBus bus)
     /// <summary>
     /// E3 sensor feed: push live GPU values the panel's dashboard displays and
     /// rotates through. Layout from AorusLcdService: temp, GPU clock(2),
-    /// usage, fan(2), RAM clock(2), RAM usage, FPS(2), TGP(2) — 16-bit fields
+    /// usage, fan(2), RAM clock(2), RAM usage, FPS(2), TGP(2) - 16-bit fields
     /// big-endian. Must be sent continuously (≈1 Hz) for the widgets to update.
     /// </summary>
     public void SendSensorFeed(SensorSample s)
@@ -180,12 +188,17 @@ public sealed class PanelController(II2cBus bus)
         return (modes, interval);
     }
 
-    /// <summary>Read the full panel status in one call.</summary>
+    /// <summary>
+    /// Read the panel status shown by the GUI (firmware, mode, on/off, dashboard).
+    /// The carousel is intentionally NOT read here: <see cref="GetLoop"/> costs
+    /// five extra sequential bus round-trips that no status consumer uses, and
+    /// each one holds the shared I2C lock, stalling the sensor feed. Call
+    /// <see cref="GetLoop"/> explicitly when the carousel is actually needed.
+    /// </summary>
     public LcdStatus GetStatus()
     {
         var (mode, on) = GetMode();
         var (elements, interval) = GetDisplay();
-        var (loopModes, loopInterval) = GetLoop();
         return new LcdStatus
         {
             FirmwareVersion = GetFirmwareVersion(),
@@ -193,8 +206,6 @@ public sealed class PanelController(II2cBus bus)
             IsOn = on,
             DisplayElements = elements,
             DisplayInterval = interval,
-            CarouselModes = loopModes,
-            CarouselInterval = loopInterval,
         };
     }
 

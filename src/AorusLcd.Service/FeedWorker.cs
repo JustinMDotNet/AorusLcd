@@ -8,8 +8,8 @@ namespace AorusLcd.Service;
 
 /// <summary>
 /// Background worker that drives the panel's live sensor feed. It locates the
-/// Aorus GPU (NVAPI), reads <see cref="FeedConfig"/>, and — while the feed is
-/// enabled — runs the shared <see cref="SensorFeedLoop"/> (E1 dashboard + E3
+/// Aorus GPU (NVAPI), reads <see cref="FeedConfig"/>, and - while the feed is
+/// enabled - runs the shared <see cref="SensorFeedLoop"/> (E1 dashboard + E3
 /// values). The config file is watched, so the GUI can enable/disable or retune
 /// the feed live without reinstalling or restarting the service.
 /// </summary>
@@ -20,21 +20,38 @@ public sealed class FeedWorker : BackgroundService
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "AorusLcd", "service.log");
 
+    private const int InitialRetryMs = 2000;
+    private const int MaxRetryMs = 60000;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         Log("service starting");
+        int retryMs = InitialRetryMs;
         while (!stoppingToken.IsCancellationRequested)
         {
-            var config = FeedConfig.Load();
+            var config = await FeedConfig.LoadAsync(cancellationToken: stoppingToken).ConfigureAwait(false);
             if (!config.Enabled || config.Elements == LcdDisplayElements.None)
             {
+                retryMs = InitialRetryMs;
                 await WaitForConfigChangeAsync(stoppingToken);
                 continue;
             }
 
             try
             {
-                await RunFeedAsync(config, stoppingToken);
+                if (await RunFeedAsync(config, stoppingToken))
+                {
+                    retryMs = InitialRetryMs; // ran until a config change; reset backoff
+                }
+                else
+                {
+                    // Hardware not ready yet (typical boot-order race). Retry
+                    // discovery with bounded backoff, but wake immediately if the
+                    // config changes so the dashboard never stays frozen.
+                    Log($"no Aorus LCD found; retrying in {retryMs}ms");
+                    await WaitForConfigChangeOrDelayAsync(retryMs, stoppingToken);
+                    retryMs = Math.Min(retryMs * 2, MaxRetryMs);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -51,23 +68,29 @@ public sealed class FeedWorker : BackgroundService
 
     /// <summary>
     /// Run the feed for the current config until the config file changes or the
-    /// service is stopping, so a live edit takes effect on the next loop.
+    /// service is stopping, so a live edit takes effect on the next loop. Returns
+    /// false if no panel was found (so the caller can back off and retry).
     /// </summary>
-    private async Task RunFeedAsync(FeedConfig config, CancellationToken stoppingToken)
+    private async Task<bool> RunFeedAsync(FeedConfig config, CancellationToken stoppingToken)
     {
-        var located = NvApiPanelLocator.Locate();
+        using var busLock = new SystemBusLock();
+
+        // Probing the bus is itself a write/read, so it must hold the shared lock
+        // or it can interleave with (and corrupt) a concurrent GUI upload.
+        (NvApiI2cBus Bus, string GpuName)? located;
+        using (busLock.Acquire())
+        {
+            located = NvApiPanelLocator.Locate();
+        }
         if (located is null)
         {
-            Log("no Aorus LCD found; waiting for config change");
-            await WaitForConfigChangeAsync(stoppingToken);
-            return;
+            return false;
         }
 
         using var reconfigured = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         using var watcher = WatchConfig(() => reconfigured.Cancel());
 
         using var sensors = new NvmlSensorSource(located.Value.Bus.PciBusId);
-        using var busLock = new SystemBusLock();
         var panel = new PanelController(located.Value.Bus);
         int pollMs = SensorFeedTiming.PollIntervalMs(config.Elements, config.IntervalSeconds);
 
@@ -81,6 +104,7 @@ public sealed class FeedWorker : BackgroundService
         {
             Log("config changed; reloading");
         }
+        return true;
     }
 
     private async Task WaitForConfigChangeAsync(CancellationToken stoppingToken)
@@ -88,6 +112,14 @@ public sealed class FeedWorker : BackgroundService
         using var changed = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         using var watcher = WatchConfig(() => changed.Cancel());
         await DelaySafe(Timeout.InfiniteTimeSpan, changed.Token);
+    }
+
+    /// <summary>Wait up to <paramref name="delayMs"/>, waking early on a config change.</summary>
+    private async Task WaitForConfigChangeOrDelayAsync(int delayMs, CancellationToken stoppingToken)
+    {
+        using var changed = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        using var watcher = WatchConfig(() => changed.Cancel());
+        await DelaySafe(TimeSpan.FromMilliseconds(delayMs), changed.Token);
     }
 
     private static FileSystemWatcher? WatchConfig(Action onChanged)

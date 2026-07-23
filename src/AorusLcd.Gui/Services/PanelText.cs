@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Runtime.InteropServices;
 using AorusLcd.Core;
 using Avalonia;
 using Avalonia.Media;
@@ -32,24 +31,6 @@ public static class PanelText
                 (Panel.Height - formatted.Height) / 2);
             ctx.DrawText(formatted, origin);
         }
-        return CopyLe565(rtb);
-    }
-
-    internal static byte[] CopyLe565(RenderTargetBitmap rtb)
-    {
-        int stride = Panel.Width * 4;
-        var bgra = new byte[stride * Panel.Height];
-        var handle = GCHandle.Alloc(bgra, GCHandleType.Pinned);
-        try
-        {
-            rtb.CopyPixels(new PixelRect(0, 0, Panel.Width, Panel.Height),
-                handle.AddrOfPinnedObject(), bgra.Length, stride);
-        }
-        finally
-        {
-            handle.Free();
-        }
-
-        return Rgb565Encoder.EncodeBgra(bgra);
+        return PanelRender.ToLe565(rtb);
     }
 }

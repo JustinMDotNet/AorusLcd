@@ -3,7 +3,7 @@ namespace AorusLcd.Core.Sensors;
 /// <summary>
 /// The reusable panel sensor-feed loop: apply the dashboard element selection
 /// (E1) once, then push a live E3 sensor frame at a fixed cadence until
-/// cancelled. Transport-agnostic — it drives a <see cref="PanelController"/> with
+/// cancelled. Transport-agnostic - it drives a <see cref="PanelController"/> with
 /// values from an <see cref="ISensorSource"/>, so both the GUI's in-process feed
 /// and the background Windows service share identical behaviour.
 ///
@@ -47,14 +47,5 @@ public sealed class SensorFeedLoop(
         }
     }
 
-    private IDisposable Enter() => acquireBus?.Invoke() ?? NoLock.Instance;
-
-    private sealed class NoLock : IDisposable
-    {
-        public static readonly NoLock Instance = new();
-
-        public void Dispose()
-        {
-        }
-    }
+    private IDisposable Enter() => acquireBus?.Invoke() ?? NoOpDisposable.Instance;
 }

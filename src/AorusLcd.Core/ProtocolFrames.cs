@@ -4,7 +4,7 @@ namespace AorusLcd.Core;
 
 /// <summary>
 /// Builders for the 256-byte protocol frames. Field layouts are verified
-/// byte-for-byte against live GCC captures — keep exactly, including the
+/// byte-for-byte against live GCC captures - keep exactly, including the
 /// min(255, delay) clamp and the 20480-byte auto-mode threshold.
 /// </summary>
 public static class ProtocolFrames

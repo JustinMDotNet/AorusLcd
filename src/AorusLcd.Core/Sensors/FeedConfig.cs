@@ -28,14 +28,15 @@ public sealed record FeedConfig
         "AorusLcd", "feed.json");
 
     /// <summary>Load the config, or return a disabled default if absent/unreadable.</summary>
-    public static FeedConfig Load(string? path = null)
+    public static async Task<FeedConfig> LoadAsync(string? path = null,
+        CancellationToken cancellationToken = default)
     {
         path ??= DefaultPath;
         try
         {
             if (File.Exists(path))
             {
-                var json = File.ReadAllText(path);
+                var json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
                 return JsonSerializer.Deserialize(json, FeedConfigJson.Default.FeedConfig) ?? new FeedConfig();
             }
         }
@@ -46,12 +47,21 @@ public sealed record FeedConfig
         return new FeedConfig();
     }
 
-    /// <summary>Persist the config, creating the directory if needed.</summary>
-    public void Save(string? path = null)
+    /// <summary>
+    /// Persist the config, creating the directory if needed. Writes via a
+    /// same-directory temp file then atomically replaces the target, so a
+    /// concurrent reader (the service's file watcher) never observes a
+    /// half-written, unparseable file that would look like a disabled config.
+    /// </summary>
+    public async Task SaveAsync(string? path = null, CancellationToken cancellationToken = default)
     {
         path ??= DefaultPath;
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, JsonSerializer.Serialize(this, FeedConfigJson.Default.FeedConfig));
+        var json = JsonSerializer.Serialize(this, FeedConfigJson.Default.FeedConfig);
+
+        string temp = path + ".tmp";
+        await File.WriteAllTextAsync(temp, json, cancellationToken).ConfigureAwait(false);
+        File.Move(temp, path, overwrite: true);
     }
 }
 

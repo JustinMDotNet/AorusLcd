@@ -35,7 +35,8 @@ public partial class MainViewModel : ViewModelBase
 
     public MainViewModel()
     {
-        RgbModes = ["Static", "Breathing", "Color Cycle", "Flash", "Wave"];
+        RgbModes = ["Static", "Breathing", "Color Cycle", "Flash", "Wave",
+            "Gradient", "Color Shift", "Dual Flash", "Tricolor"];
         SelectedRgbMode = RgbModes[0];
         StartWithWindows = StartupService.IsEnabled(); // reflect current registry state
         RefreshServiceState();
@@ -50,19 +51,23 @@ public partial class MainViewModel : ViewModelBase
     public partial string StatusMessage { get; set; } = "";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsNotBusy))]
     public partial bool IsBusy { get; set; }
 
-    [ObservableProperty]
-    public partial string GpuName { get; set; } = "—";
+    /// <summary>Inverse of <see cref="IsBusy"/>; action buttons bind their enabled state to this.</summary>
+    public bool IsNotBusy => !IsBusy;
 
     [ObservableProperty]
-    public partial string Firmware { get; set; } = "—";
+    public partial string GpuName { get; set; } = "-";
 
     [ObservableProperty]
-    public partial string PanelState { get; set; } = "—";
+    public partial string Firmware { get; set; } = "-";
 
     [ObservableProperty]
-    public partial string CurrentMode { get; set; } = "—";
+    public partial string PanelState { get; set; } = "-";
+
+    [ObservableProperty]
+    public partial string CurrentMode { get; set; } = "-";
 
     /// <summary>Whether the OS supports launching the app at login (Windows only for now).</summary>
     public bool StartupSupported => StartupService.IsSupported;
@@ -125,7 +130,7 @@ public partial class MainViewModel : ViewModelBase
     // ---- background service -------------------------------------------------
 
     [ObservableProperty]
-    public partial string ServiceStatusText { get; set; } = "—";
+    public partial string ServiceStatusText { get; set; } = "-";
 
     [ObservableProperty]
     public partial bool ServiceInstalled { get; set; }
@@ -158,6 +163,10 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial int TextSize { get; set; } = 40;
 
+    /// <summary>Apply the panel's built-in rainbow effect to text (matches GCC's default).</summary>
+    [ObservableProperty]
+    public partial bool TextRainbowEffect { get; set; } = true;
+
     [ObservableProperty]
     public partial string? GifPath { get; set; }
 
@@ -187,20 +196,28 @@ public partial class MainViewModel : ViewModelBase
     public string[] RgbModes { get; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsMultiColorMode))]
     public partial string SelectedRgbMode { get; set; }
 
     [ObservableProperty]
     public partial string RgbColorHex { get; set; } = "FF6600";
+
+    /// <summary>Second colour, used only by the multi-colour effects (Color Shift, Tricolor).</summary>
+    [ObservableProperty]
+    public partial string RgbColorHex2 { get; set; } = "0066FF";
+
+    /// <summary>Third colour, used only by the multi-colour effects (Color Shift, Tricolor).</summary>
+    [ObservableProperty]
+    public partial string RgbColorHex3 { get; set; } = "00FF66";
+
+    /// <summary>True for effects that blend multiple colours, so the extra pickers show.</summary>
+    public bool IsMultiColorMode => SelectedRgbMode is "Color Shift" or "Tricolor";
 
     [ObservableProperty]
     public partial int RgbBrightness { get; set; } = 100;
 
     [ObservableProperty]
     public partial int RgbSpeed { get; set; } = 2;
-
-    public IBrush RgbPreviewBrush => SafeBrush(RgbColorHex);
-
-    partial void OnRgbColorHexChanged(string value) => OnPropertyChanged(nameof(RgbPreviewBrush));
 
     // ---- commands ----------------------------------------------------------
 
@@ -218,7 +235,7 @@ public partial class MainViewModel : ViewModelBase
             SetSensorToggles(status.DisplayElements);
             SensorInterval = status.DisplayInterval == 0 ? SensorInterval : status.DisplayInterval;
         });
-        return $"Connected: {gpuName} — firmware {status.FirmwareVersion}, mode {status.Mode}.";
+        return $"Connected: {gpuName} - firmware {status.FirmwareVersion}, mode {status.Mode}.";
     });
 
     [RelayCommand]
@@ -236,8 +253,16 @@ public partial class MainViewModel : ViewModelBase
         ImagePath = path;
         try
         {
+            // Decode off the UI thread and size-constrained, so a large photo
+            // neither blocks the UI nor allocates a full-resolution bitmap just
+            // for a 320-wide preview.
+            var bitmap = await Task.Run(() =>
+            {
+                using var stream = System.IO.File.OpenRead(path);
+                return Bitmap.DecodeToWidth(stream, 640, BitmapInterpolationMode.HighQuality);
+            });
             var previous = PreviewImage;
-            PreviewImage = new Bitmap(path);
+            PreviewImage = bitmap;
             previous?.Dispose();
             StatusMessage = $"Loaded {path}";
         }
@@ -264,7 +289,7 @@ public partial class MainViewModel : ViewModelBase
             await _hw.SendImageAsync(le565, clear, save);
             if (clear)
             {
-                DisableFeedConfig(); // the dashboard was cleared; stop the background feed
+                await DisableFeedConfigAsync(); // the dashboard was cleared; stop the background feed
             }
             return "Image sent" + (clear ? ", sensors off" : "") + (save ? ", saved" : "") + ".";
         });
@@ -285,9 +310,9 @@ public partial class MainViewModel : ViewModelBase
             // The background service reads this config (via a file watcher) and
             // drives the panel's E1 dashboard + E3 live values, so the feed keeps
             // running after the GUI is closed.
-            WriteFeedConfig(elements, interval, enabled: true);
+            await WriteFeedConfigAsync(elements, interval, enabled: true);
             string state = await EnsureServiceRunningForFeedAsync();
-            return $"Sensors: {elements} — {state}";
+            return $"Sensors: {elements} - {state}";
         });
     }
 
@@ -304,7 +329,7 @@ public partial class MainViewModel : ViewModelBase
     /// </summary>
     private async Task<string> DisableSensorsAsync()
     {
-        WriteFeedConfig(LcdDisplayElements.None, SensorInterval, enabled: false);
+        await WriteFeedConfigAsync(LcdDisplayElements.None, SensorInterval, enabled: false);
         await _hw.SetSensorsAsync(LcdDisplayElements.None, 0, SaveOnSend);
         return "Sensor dashboard off.";
     }
@@ -355,15 +380,16 @@ public partial class MainViewModel : ViewModelBase
         Color bg = SafeColor(TextBgHex, Colors.Black);
         bool clear = ClearSensorsOnSend;
         bool save = SaveOnSend;
+        bool effect = TextRainbowEffect;
         return RunAsync("Rendering and sending text…", async () =>
         {
             var le565 = await Task.Run(() => PanelText.RenderLe565(text, size, fg, bg));
-            await _hw.SendTextAsync(le565, clear, save);
+            await _hw.SendTextAsync(le565, clear, save, effect);
             if (clear)
             {
-                DisableFeedConfig(); // the dashboard was cleared; stop the background feed
+                await DisableFeedConfigAsync(); // the dashboard was cleared; stop the background feed
             }
-            return $"Text \"{text}\" sent" + (save ? ", saved" : "") + ".";
+            return $"Text \"{text}\" sent" + (effect ? ", rainbow" : "") + (save ? ", saved" : "") + ".";
         });
     }
 
@@ -428,12 +454,15 @@ public partial class MainViewModel : ViewModelBase
     {
         if (!RgbColor.TryParse(RgbColorHex, out var color))
         {
-            StatusMessage = "Invalid color — use RRGGBB hex.";
+            StatusMessage = "Invalid color - use RRGGBB hex.";
             return Task.CompletedTask;
         }
         var mode = SelectedRgbMode;
         byte brightness = (byte)(Math.Clamp(RgbBrightness, 0, 100) * RgbFusion2.BrightnessMax / 100);
         byte speed = (byte)Math.Clamp(RgbSpeed, RgbFusion2.SpeedSlowest, RgbFusion2.SpeedFastest);
+        // The color-bank effects blend several colours; single-colour effects
+        // just use the first. Invalid/blank extra colours are simply skipped.
+        RgbColor[] colors = IsMultiColorMode ? CollectRgbColors() : [color];
         return RunAsync("Applying RGB…", async () =>
         {
             if (mode == "Static")
@@ -442,10 +471,25 @@ public partial class MainViewModel : ViewModelBase
             }
             else
             {
-                await _hw.SetRgbEffectAsync(MapRgbMode(mode), [color], speed, brightness);
+                await _hw.SetRgbEffectAsync(MapRgbMode(mode), colors, speed, brightness);
             }
-            return $"RGB: {mode} #{RgbColorHex} brightness {RgbBrightness}%.";
+            string colorText = IsMultiColorMode ? $"{colors.Length} colors" : $"#{RgbColorHex}";
+            return $"RGB: {mode} {colorText} brightness {RgbBrightness}%.";
         });
+    }
+
+    /// <summary>Ordered list of the valid colours for the multi-colour effects.</summary>
+    private RgbColor[] CollectRgbColors()
+    {
+        var colors = new List<RgbColor>(3);
+        foreach (var hex in new[] { RgbColorHex, RgbColorHex2, RgbColorHex3 })
+        {
+            if (RgbColor.TryParse(hex, out var c))
+            {
+                colors.Add(c);
+            }
+        }
+        return colors.Count > 0 ? [.. colors] : [RgbColor.Black];
     }
 
     [RelayCommand]
@@ -491,12 +535,20 @@ public partial class MainViewModel : ViewModelBase
 
     // ---- helpers -----------------------------------------------------------
 
-    private async Task RunAsync(string busyMessage, Func<Task<string>> action)
+    private Task _currentOperation = Task.CompletedTask;
+
+    private Task RunAsync(string busyMessage, Func<Task<string>> action)
     {
         if (IsBusy)
         {
-            return;
+            return Task.CompletedTask;
         }
+        _currentOperation = RunCoreAsync(busyMessage, action);
+        return _currentOperation;
+    }
+
+    private async Task RunCoreAsync(string busyMessage, Func<Task<string>> action)
+    {
         IsBusy = true;
         StatusMessage = busyMessage;
         try
@@ -542,19 +594,19 @@ public partial class MainViewModel : ViewModelBase
     private void ClearAllSensorToggles() => SetSensorToggles(LcdDisplayElements.None);
 
     /// <summary>Persist the dashboard config the background service consumes.</summary>
-    private void WriteFeedConfig(LcdDisplayElements elements, int intervalSeconds, bool enabled)
+    private Task WriteFeedConfigAsync(LcdDisplayElements elements, int intervalSeconds, bool enabled)
         => new FeedConfig
         {
             DisplayElements = (uint)elements,
             IntervalSeconds = intervalSeconds,
             Enabled = enabled,
-        }.Save();
+        }.SaveAsync();
 
     /// <summary>Flip the persisted feed config to disabled without touching the toggles.</summary>
-    private void DisableFeedConfig()
+    private async Task DisableFeedConfigAsync()
     {
-        var current = FeedConfig.Load();
-        WriteFeedConfig(current.Elements, current.IntervalSeconds, enabled: false);
+        var current = await FeedConfig.LoadAsync().ConfigureAwait(false);
+        await WriteFeedConfigAsync(current.Elements, current.IntervalSeconds, enabled: false).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -564,7 +616,8 @@ public partial class MainViewModel : ViewModelBase
     /// </summary>
     private async Task<string> EnsureServiceRunningForFeedAsync()
     {
-        switch (_service.GetState())
+        var state = await Task.Run(_service.GetState);
+        switch (state)
         {
             case ServiceState.Running:
                 RefreshServiceState();
@@ -575,7 +628,7 @@ public partial class MainViewModel : ViewModelBase
                 return "background service started; live feed running.";
             case ServiceState.NotInstalled:
                 RefreshServiceState();
-                return "saved — install the background service (Device tab) to drive the panel.";
+                return "saved - install the background service (Device tab) to drive the panel.";
             default:
                 RefreshServiceState();
                 return "saved; background service is changing state.";
@@ -584,20 +637,27 @@ public partial class MainViewModel : ViewModelBase
 
     private void RefreshServiceState()
     {
-        var state = _service.GetState();
-        Dispatcher.UIThread.Post(() =>
+        // GetState opens a ServiceController and queries the SCM - keep it off
+        // the UI thread, then marshal the result back to update bound properties.
+        _ = Task.Run(() =>
         {
-            ServiceInstalled = state is ServiceState.Stopped or ServiceState.Running or ServiceState.Transitioning;
-            ServiceRunning = state == ServiceState.Running;
-            ServiceStatusText = state switch
-            {
-                ServiceState.Running => "Installed — running",
-                ServiceState.Stopped => "Installed — stopped",
-                ServiceState.Transitioning => "Installed — changing state…",
-                ServiceState.NotInstalled => "Not installed",
-                _ => "Not available on this platform",
-            };
+            var state = _service.GetState();
+            Dispatcher.UIThread.Post(() => ApplyServiceState(state));
         });
+    }
+
+    private void ApplyServiceState(ServiceState state)
+    {
+        ServiceInstalled = state is ServiceState.Stopped or ServiceState.Running or ServiceState.Transitioning;
+        ServiceRunning = state == ServiceState.Running;
+        ServiceStatusText = state switch
+        {
+            ServiceState.Running => "Installed - running",
+            ServiceState.Stopped => "Installed - stopped",
+            ServiceState.Transitioning => "Installed - changing state…",
+            ServiceState.NotInstalled => "Not installed",
+            _ => "Not available on this platform",
+        };
     }
 
     private async Task RefreshServiceStateAfterDelayAsync()
@@ -607,13 +667,26 @@ public partial class MainViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Clean up UI resources on app shutdown. The background service is left
-    /// running deliberately so the panel keeps updating after the GUI closes.
+    /// Clean up UI resources on app shutdown. Any in-flight hardware operation
+    /// (e.g. a multi-second image/GIF upload holding the shared bus lock) is
+    /// awaited first so we never terminate mid-transfer - that would leave the
+    /// panel with a half-written framebuffer and no END frame. The background
+    /// service is left running deliberately so the panel keeps updating after
+    /// the GUI closes.
     /// </summary>
-    public Task ShutdownAsync()
+    public async Task ShutdownAsync()
     {
+        try
+        {
+            // Bounded so a stuck operation can't block exit forever (the bus lock
+            // itself times out at 60s); normal uploads finish in a few seconds.
+            await _currentOperation.WaitAsync(TimeSpan.FromSeconds(75));
+        }
+        catch
+        {
+            // Timed out or the operation faulted - proceed with shutdown anyway.
+        }
         Dispatcher.UIThread.Post(() => PreviewImage?.Dispose());
-        return Task.CompletedTask;
     }
 
     private static RgbMode MapRgbMode(string name) => name switch
@@ -622,13 +695,12 @@ public partial class MainViewModel : ViewModelBase
         "Color Cycle" => RgbMode.ColorCycle,
         "Flash" => RgbMode.Flashing,
         "Wave" => RgbMode.Wave,
+        "Gradient" => RgbMode.Gradient,
+        "Color Shift" => RgbMode.ColorShift,
+        "Dual Flash" => RgbMode.DualFlashing,
+        "Tricolor" => RgbMode.Tricolor,
         _ => RgbMode.Static,
     };
-
-    private static IBrush SafeBrush(string hex)
-        => RgbColor.TryParse(hex, out var c)
-            ? new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B))
-            : Brushes.Transparent;
 
     private static Color SafeColor(string hex, Color fallback)
         => RgbColor.TryParse(hex, out var c) ? Color.FromRgb(c.R, c.G, c.B) : fallback;

@@ -9,13 +9,13 @@ namespace AorusLcd.Core;
 /// Cross-process lock serializing all access to the GPU I2C bus (address 0x61).
 /// Because the background Windows service (LocalSystem) and the desktop GUI (the
 /// logged-in user) both talk to the same controller, their writes must never
-/// interleave — an E3 sensor frame landing in the middle of an image upload
+/// interleave - an E3 sensor frame landing in the middle of an image upload
 /// would corrupt it. Both processes acquire this <c>Global\</c> named mutex
 /// around every logical bus operation.
 ///
 /// The mutex is created with a permissive ACL (Everyone: full control) so that
-/// whichever process creates it first — often the service at boot, before any
-/// user logs in — leaves it openable by the other.
+/// whichever process creates it first - often the service at boot, before any
+/// user logs in - leaves it openable by the other.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class SystemBusLock : IDisposable

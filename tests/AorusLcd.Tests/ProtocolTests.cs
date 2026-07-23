@@ -62,7 +62,7 @@ public class ProtocolTests
     public void BuildUpload_PayloadAliasingControlOpcodesStaysChunk()
     {
         // Payload full of 0xF1/0xF2 (the header/marker opcodes) must never be
-        // misclassified — every middle frame is a Chunk regardless of content.
+        // misclassified - every middle frame is a Chunk regardless of content.
         var payload = new byte[512];
         Array.Fill(payload, (byte)0xF1);
         var frames = ProtocolFrames.BuildUpload(payload, Panel.FramebufferStatic);

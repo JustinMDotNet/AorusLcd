@@ -27,7 +27,7 @@ public sealed class HardwareService
 {
     private readonly Lazy<SystemBusLock> _busLock = new(() => new SystemBusLock());
     private PanelController? _panel;
-    private string _gpuName = "—";
+    private string _gpuName = "-";
     private RgbFusion2Controller? _rgb;
     private byte _rgbAddress;
 
@@ -42,27 +42,25 @@ public sealed class HardwareService
     public Task<LcdStatus> GetStatusAsync() => WithPanelAsync(panel => panel.GetStatus());
 
     public Task SendImageAsync(byte[] le565, bool clearSensors, bool save, CancellationToken ct = default)
-        => WithPanelAsync(panel =>
-        {
-            var frames = ProtocolFrames.BuildUpload(ByteOps.Concat(Panel.Descriptor, le565), Panel.FramebufferStatic);
-            panel.UploadContentAsync(frames, Panel.ModeStatic, isGif: false, cancellationToken: ct)
-                .GetAwaiter().GetResult();
-            if (clearSensors)
-            {
-                panel.SetDisplay(LcdDisplayElements.None, 0);
-            }
-            if (save)
-            {
-                panel.Save();
-            }
-        });
+        => SendSingleFrameAsync(le565, Panel.FramebufferStatic, Panel.ModeStatic, clearSensors, save, ct);
 
-    public Task SendTextAsync(byte[] le565, bool clearSensors, bool save, CancellationToken ct = default)
+    public Task SendTextAsync(byte[] le565, bool clearSensors, bool save, bool rainbowEffect,
+        CancellationToken ct = default)
+        => SendSingleFrameAsync(le565, Panel.FramebufferText, Panel.ModeText, clearSensors, save, ct,
+            applyTextEffect: rainbowEffect);
+
+    /// <summary>Upload one still frame (image or text) to a numbered framebuffer and select its mode.</summary>
+    private Task SendSingleFrameAsync(byte[] le565, uint framebuffer, int mode,
+        bool clearSensors, bool save, CancellationToken ct, bool applyTextEffect = false)
         => WithPanelAsync(panel =>
         {
-            var frames = ProtocolFrames.BuildUpload(ByteOps.Concat(Panel.Descriptor, le565), Panel.FramebufferText);
-            panel.UploadContentAsync(frames, Panel.ModeText, isGif: false, cancellationToken: ct)
+            var frames = ProtocolFrames.BuildUpload(ByteOps.Concat(Panel.Descriptor, le565), framebuffer);
+            panel.UploadContentAsync(frames, mode, isGif: false, cancellationToken: ct)
                 .GetAwaiter().GetResult();
+            if (applyTextEffect)
+            {
+                panel.ApplyTextEffect();
+            }
             if (clearSensors)
             {
                 panel.SetDisplay(LcdDisplayElements.None, 0);
@@ -175,16 +173,7 @@ public sealed class HardwareService
     /// <see cref="HardwareUnavailableException"/>.
     /// </summary>
     private IDisposable AcquireBus()
-        => OperatingSystem.IsWindows() ? _busLock.Value.Acquire() : NoLock.Instance;
-
-    private sealed class NoLock : IDisposable
-    {
-        public static readonly NoLock Instance = new();
-
-        public void Dispose()
-        {
-        }
-    }
+        => OperatingSystem.IsWindows() ? _busLock.Value.Acquire() : NoOpDisposable.Instance;
 
     private PanelController EnsurePanel()
     {

@@ -9,7 +9,7 @@ namespace AorusLcd.Core;
 /// Token grammar (head = u16 LE, bit15 = run flag, low 15 bits = pixel count):
 ///   run     : &lt;count|0x8000 : u16 LE&gt; &lt;pixel : 2B&gt;  (only for &gt;=3 equal px)
 ///   literal : &lt;count : u16 LE&gt; &lt;count pixels&gt;
-/// The firmware decoder mirrors this encoder, so the quirks are intentional —
+/// The firmware decoder mirrors this encoder, so the quirks are intentional -
 /// do not "optimize" them.
 /// </summary>
 public static class RleEncoder

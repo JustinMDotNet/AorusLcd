@@ -10,8 +10,8 @@
 
     <TrayIcon.Icons>
         <TrayIcons>
-            <TrayIcon Icon="/Assets/avalonia-logo.ico"
-                      ToolTipText="AorusLcd — LCD + RGB">
+            <TrayIcon Icon="/Assets/aoruslcd.ico"
+                      ToolTipText="AorusLcd - LCD + RGB">
                 <TrayIcon.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="Show window" Click="OnTrayShow" />

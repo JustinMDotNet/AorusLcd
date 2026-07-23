@@ -2,13 +2,15 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:AorusLcd.Gui.ViewModels"
         xmlns:models="using:AorusLcd.Gui.Models"
+        xmlns:conv="using:AorusLcd.Gui.Converters"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="720"
         x:Class="AorusLcd.Gui.Views.MainWindow"
         x:DataType="vm:MainViewModel"
+        Icon="/Assets/aoruslcd.ico"
         Width="900" Height="740" MinWidth="720" MinHeight="600"
-        Title="AorusLcd — Aorus Master LCD + RGB">
+        Title="AorusLcd - Aorus Master LCD + RGB">
 
     <Design.DataContext>
         <vm:MainViewModel />
@@ -49,7 +51,7 @@
                         </StackPanel>
                     </Border>
                     <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Width="90" Height="4" />
-                    <Button Content="⟳ Refresh" Command="{Binding RefreshStatusCommand}" />
+                    <Button Content="⟳ Refresh" Command="{Binding RefreshStatusCommand}" IsEnabled="{Binding IsNotBusy}" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -83,9 +85,9 @@
                                     <TextBlock Text="{Binding CurrentMode}" FontWeight="SemiBold" />
                                 </StackPanel>
                                 <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="10" Margin="0,14,0,0">
-                                    <Button Content="Panel On" Command="{Binding PanelOnCommand}" />
-                                    <Button Content="Panel Off" Command="{Binding PanelOffCommand}" />
-                                    <Button Content="💾 Save to panel" Command="{Binding SaveToPanelCommand}" />
+                                    <Button Content="Panel On" Command="{Binding PanelOnCommand}" IsEnabled="{Binding IsNotBusy}" />
+                                    <Button Content="Panel Off" Command="{Binding PanelOffCommand}" IsEnabled="{Binding IsNotBusy}" />
+                                    <Button Content="💾 Save to panel" Command="{Binding SaveToPanelCommand}" IsEnabled="{Binding IsNotBusy}" />
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -108,13 +110,13 @@
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,10,0,0">
                                     <Button Content="Install" Command="{Binding InstallServiceCommand}"
-                                            IsVisible="{Binding !ServiceInstalled}" />
+                                            IsVisible="{Binding !ServiceInstalled}" IsEnabled="{Binding IsNotBusy}" />
                                     <Button Content="Start" Command="{Binding StartServiceCommand}"
                                             IsVisible="{Binding ServiceInstalled}" IsEnabled="{Binding !ServiceRunning}" />
                                     <Button Content="Stop" Command="{Binding StopServiceCommand}"
                                             IsVisible="{Binding ServiceInstalled}" IsEnabled="{Binding ServiceRunning}" />
                                     <Button Content="Uninstall" Command="{Binding UninstallServiceCommand}"
-                                            IsVisible="{Binding ServiceInstalled}" />
+                                            IsVisible="{Binding ServiceInstalled}" IsEnabled="{Binding IsNotBusy}" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -122,7 +124,7 @@
                             <StackPanel>
                                 <TextBlock Classes="h2" Text="About" />
                                 <TextBlock Classes="label" TextWrapping="Wrap"
-                                           Text="AorusLcd — open-source control for the Aorus Master LCD Edge View and RGB Fusion 2 lighting. Click Refresh (top-right) to connect. Closing the window minimizes to the system tray; the sensor feed keeps running in the background." />
+                                           Text="AorusLcd - open-source control for the Aorus Master LCD Edge View and RGB Fusion 2 lighting. Click Refresh (top-right) to connect. Closing the window minimizes to the system tray; the sensor feed keeps running in the background." />
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -143,12 +145,12 @@
                                 <Image Source="{Binding PreviewImage}" Stretch="UniformToFill" />
                             </Border>
                             <StackPanel Grid.Column="1" Margin="16,0,0,0" Spacing="10" VerticalAlignment="Center">
-                                <Button Content="📂 Choose image…" Command="{Binding BrowseImageCommand}" HorizontalAlignment="Stretch" />
+                                <Button Content="📂 Choose image…" Command="{Binding BrowseImageCommand}" HorizontalAlignment="Stretch" IsEnabled="{Binding IsNotBusy}" />
                                 <TextBlock Classes="label" Text="{Binding ImagePath}" TextWrapping="Wrap" FontSize="11" />
                                 <CheckBox Content="Hide sensor overlay (clean image)" IsChecked="{Binding ClearSensorsOnSend}" />
                                 <CheckBox Content="Save to panel (survives reboot)" IsChecked="{Binding SaveOnSend}" />
                                 <Button Content="⬆ Send to LCD" Command="{Binding SendImageCommand}"
-                                        Background="#FF7A18" Foreground="White" HorizontalAlignment="Stretch" />
+                                        Background="#FF7A18" Foreground="White" HorizontalAlignment="Stretch" IsEnabled="{Binding IsNotBusy}" />
                             </StackPanel>
                         </Grid>
                         <TextBlock Classes="label" FontSize="11" Margin="0,10,0,0"
@@ -172,7 +174,8 @@
                                 <DataTemplate DataType="models:ModePreset">
                                     <Button Content="{Binding Name}" Margin="0,0,10,0" Width="130"
                                             Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).SetModeCommand}"
-                                            CommandParameter="{Binding}" />
+                                            CommandParameter="{Binding}"
+                                            IsEnabled="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).IsNotBusy}" />
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -190,13 +193,20 @@
                             <TextBlock Classes="label" Grid.Row="1" Grid.Column="0" Text="Text / BG (RRGGBB)" Margin="0,0,12,8" />
                             <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
                                 <TextBox Text="{Binding TextColorHex}" Width="110" />
+                                <ColorPicker Color="{Binding TextColorHex, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
+                                             IsAlphaEnabled="False" VerticalAlignment="Center" />
                                 <TextBox Text="{Binding TextBgHex}" Width="110" />
+                                <ColorPicker Color="{Binding TextBgHex, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
+                                             IsAlphaEnabled="False" VerticalAlignment="Center" />
                                 <TextBlock Classes="label" Text="Size" />
                                 <NumericUpDown Value="{Binding TextSize}" Minimum="8" Maximum="120" Width="110" />
                             </StackPanel>
 
-                            <Button Grid.Row="2" Grid.Column="1" Content="⬆ Send text to LCD" HorizontalAlignment="Left"
-                                    Command="{Binding SendTextCommand}" Background="#FF7A18" Foreground="White" />
+                            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="14">
+                                <Button Content="⬆ Send text to LCD" HorizontalAlignment="Left"
+                                        Command="{Binding SendTextCommand}" Background="#FF7A18" Foreground="White" IsEnabled="{Binding IsNotBusy}" />
+                                <CheckBox Content="Rainbow effect" IsChecked="{Binding TextRainbowEffect}" VerticalAlignment="Center" />
+                            </StackPanel>
                         </Grid>
                     </StackPanel>
                 </Border>
@@ -206,9 +216,9 @@
                     <StackPanel>
                         <TextBlock Classes="h2" Text="Animated GIF" />
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <Button Content="📂 Choose GIF…" Command="{Binding BrowseGifCommand}" />
+                            <Button Content="📂 Choose GIF…" Command="{Binding BrowseGifCommand}" IsEnabled="{Binding IsNotBusy}" />
                             <Button Content="⬆ Send GIF to LCD" Command="{Binding SendGifCommand}"
-                                    Background="#FF7A18" Foreground="White" />
+                                    Background="#FF7A18" Foreground="White" IsEnabled="{Binding IsNotBusy}" />
                         </StackPanel>
                         <TextBlock Classes="label" Text="{Binding GifPath}" TextWrapping="Wrap" FontSize="11" Margin="0,8,0,0" />
                     </StackPanel>
@@ -230,7 +240,7 @@
                         <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,10,0,0">
                             <TextBlock Classes="label" Text="Interval (s)" />
                             <NumericUpDown Value="{Binding CarouselInterval}" Minimum="1" Maximum="255" Width="120" />
-                            <Button Content="Apply carousel" Command="{Binding ApplyCarouselCommand}" />
+                            <Button Content="Apply carousel" Command="{Binding ApplyCarouselCommand}" IsEnabled="{Binding IsNotBusy}" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -254,8 +264,8 @@
                         <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,10,0,0">
                             <TextBlock Classes="label" Text="Rotation interval (s)" />
                             <NumericUpDown Value="{Binding SensorInterval}" Minimum="1" Maximum="255" Width="120" />
-                            <Button Content="Apply sensors" Command="{Binding ApplySensorsCommand}" />
-                            <Button Content="Sensors off" Command="{Binding SensorsOffCommand}" />
+                            <Button Content="Apply sensors" Command="{Binding ApplySensorsCommand}" IsEnabled="{Binding IsNotBusy}" />
+                            <Button Content="Sensors off" Command="{Binding SensorsOffCommand}" IsEnabled="{Binding IsNotBusy}" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -279,7 +289,13 @@
                             <TextBlock Classes="label" Grid.Row="1" Grid.Column="0" Text="Color (RRGGBB)" Margin="0,0,12,8" />
                             <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
                                 <TextBox Text="{Binding RgbColorHex}" Width="120" />
-                                <Border Width="36" Height="28" CornerRadius="4" Background="{Binding RgbPreviewBrush}" />
+                                <ColorPicker Color="{Binding RgbColorHex, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
+                                             IsAlphaEnabled="False" VerticalAlignment="Center" />
+                                <TextBlock Classes="label" Text="+" VerticalAlignment="Center" IsVisible="{Binding IsMultiColorMode}" />
+                                <ColorPicker Color="{Binding RgbColorHex2, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
+                                             IsAlphaEnabled="False" VerticalAlignment="Center" IsVisible="{Binding IsMultiColorMode}" />
+                                <ColorPicker Color="{Binding RgbColorHex3, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
+                                             IsAlphaEnabled="False" VerticalAlignment="Center" IsVisible="{Binding IsMultiColorMode}" />
                             </StackPanel>
 
                             <TextBlock Classes="label" Grid.Row="2" Grid.Column="0" Text="Brightness" Margin="0,0,12,8" />
@@ -296,8 +312,8 @@
                         </Grid>
                         <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,12,0,0">
                             <Button Content="Apply RGB" Command="{Binding ApplyRgbCommand}"
-                                    Background="#FF7A18" Foreground="White" />
-                            <Button Content="RGB off" Command="{Binding RgbOffCommand}" />
+                                    Background="#FF7A18" Foreground="White" IsEnabled="{Binding IsNotBusy}" />
+                            <Button Content="RGB off" Command="{Binding RgbOffCommand}" IsEnabled="{Binding IsNotBusy}" />
                         </StackPanel>
                     </StackPanel>
                 </Border>

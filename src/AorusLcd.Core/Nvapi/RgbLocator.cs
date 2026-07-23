@@ -24,9 +24,10 @@ public static class RgbLocator
         {
             foreach (byte addr in CandidateAddresses)
             {
-                if (new RgbFusion2Controller(new NvApiI2cBus(gpu, addr, Port)).Detect().Present)
+                var controller = new RgbFusion2Controller(new NvApiI2cBus(gpu, addr, Port));
+                if (controller.Detect().Present)
                 {
-                    return (new RgbFusion2Controller(new NvApiI2cBus(gpu, addr, Port)), NvApi.GetFullName(gpu), addr);
+                    return (controller, NvApi.GetFullName(gpu), addr);
                 }
             }
         }
@@ -43,7 +44,7 @@ public static class RgbLocator
             {
                 bool present = new RgbFusion2Controller(new NvApiI2cBus(gpu, addr, Port)).Detect().Present;
                 yield return (name, addr, present,
-                    present ? "write ACK — usable for control" : "no response");
+                    present ? "write ACK - usable for control" : "no response");
             }
         }
     }
