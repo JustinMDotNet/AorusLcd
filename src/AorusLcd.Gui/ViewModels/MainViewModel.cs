@@ -243,10 +243,11 @@ public partial class MainViewModel : ViewModelBase
     {
         var gpuName = await _hw.ConnectAsync();
         var status = await _hw.GetStatusAsync();
+        var rgbKind = await DetectRgbKindAsync(gpuName);
         Dispatcher.UIThread.Post(() =>
         {
             GpuName = gpuName;
-            IsBlackwellRgb = RgbLocator.ClassifyByName(gpuName) == RgbControllerKind.Blackwell;
+            IsBlackwellRgb = rgbKind == RgbControllerKind.Blackwell;
             Firmware = status.FirmwareVersion;
             PanelState = status.IsOn ? "On" : "Off";
             CurrentMode = $"{(int)status.Mode} ({status.Mode})";
@@ -255,6 +256,20 @@ public partial class MainViewModel : ViewModelBase
         });
         return $"Connected: {gpuName} - firmware {status.FirmwareVersion}, mode {status.Mode}.";
     });
+
+    /// <summary>Prefer the hardware-detected RGB generation; fall back to the GPU name when RGB can't be located.</summary>
+    private async Task<RgbControllerKind> DetectRgbKindAsync(string gpuName)
+    {
+        try
+        {
+            var (_, _, kind) = await _hw.ConnectRgbAsync();
+            return kind;
+        }
+        catch (Exception)
+        {
+            return _hw.RgbKind ?? RgbLocator.ClassifyByName(gpuName);
+        }
+    }
 
     [RelayCommand]
     private async Task BrowseImageAsync()
