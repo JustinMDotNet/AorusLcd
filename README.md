@@ -275,3 +275,23 @@ never a bricked card. Still: use at your own risk.
 
 - Protocol reverse engineering: `albancreton/aorus-master-linux`.
 - NVAPI I2C approach and struct layout: OpenRGB (`CalcProgrammer1/OpenRGB`).
+
+## License
+
+Released under the [MIT License](LICENSE) - the same license as the
+[`albancreton/aorus-master-linux`](https://github.com/albancreton/aorus-master-linux)
+project this tool ports.
+
+**Third-party notices.** This project is a clean-room reimplementation that
+records *protocol facts only* - opcodes, register values, byte layouts, and
+enums - and ships no third-party or vendor code:
+
+- Protocol constants and the NVAPI I2C struct layout used for RGB Fusion 2 were
+  taken as factual reference from OpenRGB
+  (`CalcProgrammer1/OpenRGB`, GPL-2.0). Only non-copyrightable facts (register
+  addresses, mode values) are used; no OpenRGB source is copied or distributed.
+- The `0x61` LCD command surface was recovered by decompiling Gigabyte's
+  `ucVga.dll` (`GvLcdApi`) and by capturing live GCC I2C traffic - **facts only,
+  no vendor code is included or shipped**.
+
+Not affiliated with or endorsed by Gigabyte or NVIDIA.
