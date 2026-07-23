@@ -1,10 +1,6 @@
 namespace AorusLcd.Core;
 
-/// <summary>
-/// A disposable that does nothing, for the "no lock required" path (e.g. on
-/// platforms without the cross-process bus lock). Shared so callers don't each
-/// declare their own throwaway type.
-/// </summary>
+/// <summary>No-op disposable for paths that need no lock, shared so callers do not define throwaway types.</summary>
 public sealed class NoOpDisposable : IDisposable
 {
     public static readonly NoOpDisposable Instance = new();

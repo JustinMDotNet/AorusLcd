@@ -5,10 +5,7 @@ using Avalonia.Media.Imaging;
 
 namespace AorusLcd.Gui.Services;
 
-/// <summary>
-/// Shared helper for the image and text paths: copy a 320x170 render target's
-/// pixels into the panel's little-endian RGB565 frame.
-/// </summary>
+/// <summary>Copy a 320x170 render target into the panel little-endian RGB565 frame for image/text paths.</summary>
 internal static class PanelRender
 {
     public static byte[] ToLe565(RenderTargetBitmap rtb)

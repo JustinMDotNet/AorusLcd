@@ -1,11 +1,6 @@
 namespace AorusLcd.Core;
 
-/// <summary>
-/// A snapshot of GPU sensor values for the panel's live dashboard feed (the
-/// <c>E3</c> packet). Field order/units match Gigabyte's AorusLcdService:
-/// clocks in MHz, usage/fan as the raw displayed number, TGP in whole watts
-/// (the panel prints the raw number as-is).
-/// </summary>
+/// <summary>GPU sensor snapshot for E3: MHz clocks, usage/fan raw display values, and TGP in whole watts.</summary>
 public sealed record SensorSample
 {
     public int GpuTempC { get; init; }

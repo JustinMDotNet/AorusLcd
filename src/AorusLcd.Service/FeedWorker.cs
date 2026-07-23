@@ -6,13 +6,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace AorusLcd.Service;
 
-/// <summary>
-/// Background worker that drives the panel's live sensor feed. It locates the
-/// Aorus GPU (NVAPI), reads <see cref="FeedConfig"/>, and - while the feed is
-/// enabled - runs the shared <see cref="SensorFeedLoop"/> (E1 dashboard + E3
-/// values). The config file is watched, so the GUI can enable/disable or retune
-/// the feed live without reinstalling or restarting the service.
-/// </summary>
+/// <summary>Background service worker that watches <see cref="FeedConfig"/> and runs the shared E1/E3 sensor feed through NVAPI.</summary>
 [SupportedOSPlatform("windows")]
 public sealed class FeedWorker : BackgroundService
 {
@@ -45,9 +39,7 @@ public sealed class FeedWorker : BackgroundService
                 }
                 else
                 {
-                    // Hardware not ready yet (typical boot-order race). Retry
-                    // discovery with bounded backoff, but wake immediately if the
-                    // config changes so the dashboard never stays frozen.
+                    // Hardware may be unavailable at boot; retry with bounded backoff but wake on config changes.
                     Log($"no Aorus LCD found; retrying in {retryMs}ms");
                     await WaitForConfigChangeOrDelayAsync(retryMs, stoppingToken);
                     retryMs = Math.Min(retryMs * 2, MaxRetryMs);
@@ -66,11 +58,7 @@ public sealed class FeedWorker : BackgroundService
         Log("service stopping");
     }
 
-    /// <summary>
-    /// Run the feed for the current config until the config file changes or the
-    /// service is stopping, so a live edit takes effect on the next loop. Returns
-    /// false if no panel was found (so the caller can back off and retry).
-    /// </summary>
+    /// <summary>Run current config until it changes or service stops; false means no panel found, so caller backs off.</summary>
     private async Task<bool> RunFeedAsync(FeedConfig config, CancellationToken stoppingToken)
     {
         using var busLock = new SystemBusLock();

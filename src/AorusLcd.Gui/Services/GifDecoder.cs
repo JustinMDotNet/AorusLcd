@@ -5,18 +5,10 @@ using SkiaSharp;
 
 namespace AorusLcd.Gui.Services;
 
-/// <summary>
-/// Cross-platform animated-GIF decoding via SkiaSharp (bundled with Avalonia).
-/// Produces 320x170 LE-RGB565 frames and per-frame delays for the panel's GIF
-/// upload path.
-/// </summary>
+/// <summary>SkiaSharp GIF decoder producing 320x170 LE-RGB565 frames and per-frame delays for panel upload.</summary>
 public static class GifDecoder
 {
-    /// <summary>
-    /// Upper bound on decoded frames. A 320x170 panel needs nothing close to
-    /// this; the cap stops a pathological multi-thousand-frame GIF from
-    /// exhausting memory (each frame is decoded, RLE-compressed, and chunked).
-    /// </summary>
+    /// <summary>Decoded-frame cap prevents pathological GIFs from exhausting memory during decode/RLE/chunking.</summary>
     public const int MaxFrames = 256;
 
     // Mitchell cubic resampling gives clean downscales to 320x170 instead of the
@@ -46,9 +38,7 @@ public static class GifDecoder
         using var scaled = new SKBitmap(scaledInfo);
         for (int i = 0; i < count; i++)
         {
-            // Reuse the previously composited frame (already in `full`) when this
-            // frame depends on it - the common case - so SkiaSharp doesn't
-            // re-decode the whole preceding chain (otherwise ~O(n²) work).
+            // Reuse the composited previous frame when possible to avoid SkiaSharp re-decoding the chain (~O(n²)).
             int required = i < frameInfos.Length ? frameInfos[i].RequiredFrame : -1;
             var options = (i > 0 && required == i - 1)
                 ? new SKCodecOptions(i, i - 1)

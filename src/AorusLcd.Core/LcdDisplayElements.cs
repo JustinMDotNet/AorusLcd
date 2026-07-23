@@ -1,12 +1,6 @@
 namespace AorusLcd.Core;
 
-/// <summary>
-/// Sensor widgets the panel's built-in dashboard can overlay/rotate, as set by
-/// the <c>E1</c> SetDisplay command. Bit values and order are from Gigabyte's
-/// <c>ucVga.dll</c> (<c>GvLcdApi.SetDisplay</c> / the <c>Display</c> enum):
-/// the command carries one flag byte per element in this exact order, followed
-/// by a rotation-interval byte.
-/// </summary>
+/// <summary>E1 SetDisplay dashboard widgets, in ucVga.dll <c>Display</c> order; one flag byte per element, then rotation interval.</summary>
 [Flags]
 public enum LcdDisplayElements : uint
 {

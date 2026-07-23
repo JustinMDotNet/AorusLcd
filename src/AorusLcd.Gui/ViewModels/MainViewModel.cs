@@ -14,17 +14,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace AorusLcd.Gui.ViewModels;
 
-/// <summary>
-/// Main application state: panel status, image upload, the sensor dashboard,
-/// and RGB lighting. Hardware calls run on background threads; UI-bound
-/// properties are updated back on the UI thread.
-///
-/// The live sensor dashboard is driven by the background <c>AorusLcdFeed</c>
-/// Windows service, not the GUI process: enabling sensors writes a shared
-/// <see cref="FeedConfig"/> that the service watches and acts on, so the panel
-/// keeps updating after the GUI is closed. The GUI only manages the service and
-/// performs one-shot panel/RGB commands.
-/// </summary>
+/// <summary>Main UI state for status, uploads, sensor dashboard, and RGB; service-backed sensor feed keeps running after GUI close.</summary>
 public partial class MainViewModel : ViewModelBase
 {
     private readonly HardwareService _hw = new();
@@ -253,9 +243,7 @@ public partial class MainViewModel : ViewModelBase
         ImagePath = path;
         try
         {
-            // Decode off the UI thread and size-constrained, so a large photo
-            // neither blocks the UI nor allocates a full-resolution bitmap just
-            // for a 320-wide preview.
+            // Decode off the UI thread, size-constrained, to avoid blocking or full-resolution allocations for 320-wide preview.
             var bitmap = await Task.Run(() =>
             {
                 using var stream = System.IO.File.OpenRead(path);
@@ -307,9 +295,7 @@ public partial class MainViewModel : ViewModelBase
                 return await DisableSensorsAsync();
             }
 
-            // The background service reads this config (via a file watcher) and
-            // drives the panel's E1 dashboard + E3 live values, so the feed keeps
-            // running after the GUI is closed.
+            // The service watches this config and drives E1/E3 so the feed continues after the GUI closes.
             await WriteFeedConfigAsync(elements, interval, enabled: true);
             string state = await EnsureServiceRunningForFeedAsync();
             return $"Sensors: {elements} - {state}";
@@ -323,10 +309,7 @@ public partial class MainViewModel : ViewModelBase
         return RunAsync("Disabling sensor dashboard…", async () => await DisableSensorsAsync());
     }
 
-    /// <summary>
-    /// Turn the dashboard off: stop the background feed (config) and clear the
-    /// panel's dashboard directly so the widgets disappear immediately.
-    /// </summary>
+    /// <summary>Stop feed config and clear the dashboard directly so widgets disappear immediately.</summary>
     private async Task<string> DisableSensorsAsync()
     {
         await WriteFeedConfigAsync(LcdDisplayElements.None, SensorInterval, enabled: false);
@@ -609,11 +592,7 @@ public partial class MainViewModel : ViewModelBase
         await WriteFeedConfigAsync(current.Elements, current.IntervalSeconds, enabled: false).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Ensure the background service is running so it can act on the config we
-    /// just wrote. Starts it if installed-but-stopped; prompts to install it
-    /// otherwise. Returns a human-readable state for the status line.
-    /// </summary>
+    /// <summary>Ensure the service can act on the config: start it if stopped, prompt install if missing, and return status text.</summary>
     private async Task<string> EnsureServiceRunningForFeedAsync()
     {
         var state = await Task.Run(_service.GetState);
@@ -666,14 +645,7 @@ public partial class MainViewModel : ViewModelBase
         RefreshServiceState();
     }
 
-    /// <summary>
-    /// Clean up UI resources on app shutdown. Any in-flight hardware operation
-    /// (e.g. a multi-second image/GIF upload holding the shared bus lock) is
-    /// awaited first so we never terminate mid-transfer - that would leave the
-    /// panel with a half-written framebuffer and no END frame. The background
-    /// service is left running deliberately so the panel keeps updating after
-    /// the GUI closes.
-    /// </summary>
+    /// <summary>Await in-flight hardware transfers before shutdown so uploads finish with END; leave service running afterward.</summary>
     public async Task ShutdownAsync()
     {
         try

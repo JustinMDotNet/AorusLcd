@@ -1,15 +1,6 @@
 namespace AorusLcd.Core.Sensors;
 
-/// <summary>
-/// Reads GPU sensors through NVML for the panel's live feed. Values map to the
-/// <c>E3</c> packet: clocks in MHz, GPU/RAM usage as a percentage, TGP in whole
-/// watts (the panel prints the raw number, so watts read correctly; GCC sent
-/// deci-watts, which is why its readout looked 10x too high). FPS is not
-/// available from NVML and is reported as 0.
-///
-/// When a PCI bus id is supplied, the matching NVML device is selected so a
-/// multi-GPU system feeds the correct card's sensors; otherwise device 0 is used.
-/// </summary>
+/// <summary>Reads NVML sensors for E3: MHz clocks, percent usage/RAM, whole-watt TGP, fan value, FPS=0; selects PCI bus match or device 0.</summary>
 public sealed class NvmlSensorSource : ISensorSource
 {
     private const uint TemperatureGpu = 0;
@@ -63,13 +54,7 @@ public sealed class NvmlSensorSource : ISensorSource
         };
     }
 
-    /// <summary>
-    /// Read fan speed as RPM (the unit the panel's E3 fan field expects). Uses
-    /// the per-fan RPM API when the driver exposes it; on older drivers that
-    /// lack the export, falls back to <c>nvmlDeviceGetFanSpeed</c>, which returns
-    /// a 0-100 percentage. This is read-only telemetry - it never changes the
-    /// fan curve, which stays on the GPU's own control.
-    /// </summary>
+    /// <summary>Read fan RPM via per-fan API when available; otherwise fall back to 0-100 percent without changing fan control.</summary>
     private static int ReadFanRpm(IntPtr device)
     {
         if (!_fanRpmUnavailable)
@@ -91,10 +76,7 @@ public sealed class NvmlSensorSource : ISensorSource
         return Nvml.GetFanSpeed(device, out uint pct) == 0 ? (int)pct : 0;
     }
 
-    /// <summary>
-    /// Pick the NVML device whose PCI bus matches <paramref name="pciBusId"/>;
-    /// fall back to device 0 if unknown or unmatched.
-    /// </summary>
+    /// <summary>Pick the NVML device matching <paramref name="pciBusId"/>, falling back to device 0 if unknown or unmatched.</summary>
     private static IntPtr ResolveDevice(uint? pciBusId)
     {
         if (pciBusId is uint wanted && Nvml.GetCount(out uint count) == 0)

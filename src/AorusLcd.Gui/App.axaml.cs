@@ -32,10 +32,7 @@ public partial class App : Application
             _window = new MainWindow { DataContext = _viewModel };
             _window.Closing += OnWindowClosing;
 
-            // The classic desktop lifetime always shows MainWindow. For --minimized
-            // autostart we still assign it (so it is fully initialized and the tray
-            // "Show" works), but start it minimized + off the taskbar and hide it the
-            // moment it opens, so it goes straight to the tray without a visible flash.
+            // For --minimized autostart, initialize MainWindow for tray Show, then hide it immediately to avoid a flash.
             _startMinimized = desktop.Args?.Contains(StartupService.MinimizedArg) == true;
             if (_startMinimized)
             {

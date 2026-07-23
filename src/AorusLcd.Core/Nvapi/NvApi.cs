@@ -3,13 +3,7 @@ using System.Runtime.Versioning;
 
 namespace AorusLcd.Core.Nvapi;
 
-/// <summary>
-/// Thin P/Invoke layer over <c>nvapi64.dll</c>. NVAPI exposes a single export,
-/// <c>nvapi_QueryInterface(id)</c>, returning a function pointer per interface
-/// id; we resolve the handful we need (init, enumerate GPUs, I2C read/write).
-/// Function ids and the <see cref="NvI2cInfoV3"/> layout match the public
-/// OpenRGB NVAPI headers.
-/// </summary>
+/// <summary>Thin <c>nvapi64.dll</c> P/Invoke layer resolving needed QueryInterface ids; ids and <see cref="NvI2cInfoV3"/> match OpenRGB headers.</summary>
 [SupportedOSPlatform("windows")]
 internal static class NvApi
 {

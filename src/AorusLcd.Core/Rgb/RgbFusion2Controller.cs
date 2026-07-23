@@ -1,8 +1,6 @@
 namespace AorusLcd.Core.Rgb;
 
-/// <summary>
-/// Per-zone effect configuration passed to the controller.
-/// </summary>
+/// <summary>Per-zone effect configuration passed to the controller.</summary>
 public sealed class RgbZoneConfig
 {
     public byte Brightness { get; set; } = RgbFusion2.BrightnessMax;
@@ -11,12 +9,7 @@ public sealed class RgbZoneConfig
     public byte NumberOfColors => (byte)Colors.Length;
 }
 
-/// <summary>
-/// Byte-exact port of OpenRGB's <c>RGBFusion2GPUController</c>. Drives the
-/// Aorus GPU RGB controller (typically at I2C address 0x71; some RTX 50-series
-/// cards answer at 0x75) over an <see cref="II2cBus"/> using raw 8-byte block
-/// writes.
-/// </summary>
+/// <summary>Byte-exact OpenRGB RGBFusion2 GPU controller port using raw 8-byte I2C writes, usually at 0x71 or RTX 50-series 0x75.</summary>
 public sealed class RgbFusion2Controller(II2cBus bus)
 {
     private readonly RgbColor[] _zoneColor = new RgbColor[4];
@@ -24,12 +17,7 @@ public sealed class RgbFusion2Controller(II2cBus bus)
     /// <summary>Delay after each packet; the controller NAKs back-to-back writes.</summary>
     public int WriteDelayMs { get; set; } = 20;
 
-    /// <summary>
-    /// Probe the controller by writing the <c>AB</c> query and checking the
-    /// write is ACKed. Read-back is intentionally NOT attempted: the RTX 5090
-    /// Master does not answer reads, and a failed read leaves the GPU I2C
-    /// engine in an error state that breaks the following write.
-    /// </summary>
+    /// <summary>Probe by ACKed <c>AB</c> write only; RTX 5090 Master read failures leave GPU I2C in an error state.</summary>
     public (bool Present, bool Handshake, byte[] Response) Detect()
     {
         try

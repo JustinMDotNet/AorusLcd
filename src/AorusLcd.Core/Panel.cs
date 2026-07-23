@@ -1,10 +1,6 @@
 namespace AorusLcd.Core;
 
-/// <summary>
-/// Physical panel geometry and the fixed framebuffer/mode constants recovered
-/// from Gigabyte Control Center captures. The panel is 320x170, little-endian
-/// RGB565, row-major.
-/// </summary>
+/// <summary>Panel constants from GCC captures: 320x170 little-endian RGB565, row-major, with fixed framebuffer/mode values.</summary>
 public static class Panel
 {
     public const int Width = 320;
@@ -12,10 +8,7 @@ public static class Panel
     public const int FramePixels = Width * Height;
     public const int FrameBytes = FramePixels * 2;
 
-    /// <summary>
-    /// 12-byte payload descriptor prepended before single-frame pixels. Encodes
-    /// 320x170 plus fixed fields; identical in GCC's image and text uploads.
-    /// </summary>
+    /// <summary>12-byte single-frame payload descriptor encoding 320x170 plus fixed fields, shared by image/text uploads.</summary>
     public static readonly byte[] Descriptor =
     [
         0x01, 0x00, 0x0B, 0xA9, 0x01, 0x00, 0x40, 0x01, 0xAA, 0x00, 0x01, 0x00,

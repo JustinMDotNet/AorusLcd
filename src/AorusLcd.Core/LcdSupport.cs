@@ -1,9 +1,6 @@
 namespace AorusLcd.Core;
 
-/// <summary>
-/// LCD-capable Gigabyte GPU subsystem IDs (SSIDs), from ucVga.dll's
-/// <c>GvLcdApi.IsSupportLcd</c>. Used to confirm a card has an Edge View panel.
-/// </summary>
+/// <summary>LCD-capable Gigabyte GPU SSIDs from <c>GvLcdApi.IsSupportLcd</c>, used to confirm Edge View support.</summary>
 public static class LcdSupport
 {
     private static readonly HashSet<int> SupportedSsids =

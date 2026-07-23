@@ -2,11 +2,7 @@ using System.Buffers.Binary;
 
 namespace AorusLcd.Core;
 
-/// <summary>
-/// Builders for the 256-byte protocol frames. Field layouts are verified
-/// byte-for-byte against live GCC captures - keep exactly, including the
-/// min(255, delay) clamp and the 20480-byte auto-mode threshold.
-/// </summary>
+/// <summary>Builds byte-exact 256-byte protocol frames, preserving min(255, delay) and the 20480-byte auto-mode threshold.</summary>
 public static class ProtocolFrames
 {
     public const int FrameSize = 256;
@@ -31,10 +27,7 @@ public static class ProtocolFrames
         return b;
     }
 
-    /// <summary>
-    /// 19-byte F1 upload header (padded to 256). <paramref name="mode"/> null =
-    /// auto (2 when the payload is >= 20480 bytes, else 1).
-    /// </summary>
+    /// <summary>19-byte F1 upload header padded to 256; null <paramref name="mode"/> auto-selects 2 if payload >= 20480 bytes, else 1.</summary>
     public static byte[] MakeF1Header(uint fbAddr, uint nchunks, ushort nframes,
         int delay, int usize, byte flag = 1, byte? mode = null)
     {
@@ -51,10 +44,7 @@ public static class ProtocolFrames
         return h;
     }
 
-    /// <summary>
-    /// Split into 256-byte zero-padded chunks. Chunk count is usize/256 + 1
-    /// (an exact 256-multiple still gets a full pad chunk).
-    /// </summary>
+    /// <summary>Split into 256-byte zero-padded chunks; exact 256-byte multiples still get a full pad chunk.</summary>
     public static List<byte[]> ChunkPayload(ReadOnlySpan<byte> pdata)
     {
         int nchunks = pdata.Length / FrameSize + 1;
@@ -73,20 +63,12 @@ public static class ProtocolFrames
         return outList;
     }
 
-    /// <summary>
-    /// Full upload sequence as role-tagged frames: BEGIN -> F1 header -> chunks
-    /// -> END. Callers pace each frame by its <see cref="UploadFrameKind"/>.
-    /// </summary>
+    /// <summary>Full upload sequence as BEGIN, F1 header, chunks, END; callers pace by <see cref="UploadFrameKind"/>.</summary>
     public static List<UploadFrame> BuildUpload(ReadOnlySpan<byte> pdata, uint fbAddr,
         byte flag = 1, ushort nframes = 0, int delay = 0, byte? mode = null)
         => BuildUpload(default, pdata, fbAddr, flag, nframes, delay, mode);
 
-    /// <summary>
-    /// Same as <see cref="BuildUpload(ReadOnlySpan{byte},uint,byte,ushort,int,byte?)"/>
-    /// but chunks the logical concatenation of <paramref name="prefix"/> and
-    /// <paramref name="pdata"/> directly, so callers that prepend a fixed
-    /// descriptor (image/text) never allocate a full combined payload buffer.
-    /// </summary>
+    /// <summary>Like <see cref="BuildUpload(ReadOnlySpan{byte},uint,byte,ushort,int,byte?)"/> but chunks prefix+payload without combined allocation.</summary>
     public static List<UploadFrame> BuildUpload(ReadOnlySpan<byte> prefix, ReadOnlySpan<byte> pdata,
         uint fbAddr, byte flag = 1, ushort nframes = 0, int delay = 0, byte? mode = null)
     {
@@ -112,11 +94,7 @@ public static class ProtocolFrames
         return frames;
     }
 
-    /// <summary>
-    /// Copy <paramref name="count"/> bytes starting at logical offset
-    /// <paramref name="start"/> from the concatenation <paramref name="a"/> +
-    /// <paramref name="b"/> into <paramref name="dst"/>.
-    /// </summary>
+    /// <summary>Copy bytes from logical offset <paramref name="start"/> in <paramref name="a"/> + <paramref name="b"/> into <paramref name="dst"/>.</summary>
     private static void CopyLogical(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b,
         int start, int count, Span<byte> dst)
     {

@@ -1,9 +1,6 @@
 namespace AorusLcd.Core;
 
-/// <summary>
-/// Legacy GvLcdApi command opcodes recovered from ucVga.dll. Every command
-/// frame is [opcode, CB 55 AC 38, params...] zero-padded to 256 bytes.
-/// </summary>
+/// <summary>Legacy ucVga.dll GvLcdApi opcodes; command frames are [opcode, CB 55 AC 38, params...] padded to 256 bytes.</summary>
 public static class Opcode
 {
     public static readonly byte[] Magic = [0xCB, 0x55, 0xAC, 0x38];

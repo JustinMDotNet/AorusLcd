@@ -2,12 +2,7 @@ using System.Buffers.Binary;
 
 namespace AorusLcd.Core;
 
-/// <summary>
-/// Builds the animated-GIF upload payload:
-/// <c>[frameCount:2 LE] + table[frameCount] of [endOffset:4 LE][w:2][h:2][fmt:2]
-/// + concatenated RLE frames</c>. The u32 is the INCLUSIVE end offset of that
-/// frame's RLE blob within the payload. There is no checksum anywhere.
-/// </summary>
+/// <summary>Builds animated-GIF payload: frame count, per-frame inclusive end offsets/dimensions/format, then RLE blobs; no checksum.</summary>
 public static class GifPayload
 {
     private const int FormatRle = 3;
@@ -22,11 +17,7 @@ public static class GifPayload
         return table;
     }
 
-    /// <summary>
-    /// RLE-compress each frame and assemble <c>frameCount + table + blobs</c>
-    /// into a single right-sized buffer. The returned delay unit is
-    /// milliseconds (raw, as GCC stores it).
-    /// </summary>
+    /// <summary>RLE-compress frames into <c>frameCount + table + blobs</c>; returned delays are raw GCC milliseconds.</summary>
     public static (byte[] Payload, int FrameCount, int DelayMs) Build(
         IReadOnlyList<byte[]> le565Frames, IReadOnlyList<int> frameDelaysMs, int? delayOverride)
     {

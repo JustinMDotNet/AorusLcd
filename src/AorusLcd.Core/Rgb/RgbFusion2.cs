@@ -1,9 +1,6 @@
 namespace AorusLcd.Core.Rgb;
 
-/// <summary>
-/// Gigabyte RGB Fusion 2 GPU register/mode constants (from OpenRGB's
-/// <c>GigabyteRGBFusion2GPUController</c>). The Aorus Master exposes 5 zones.
-/// </summary>
+/// <summary>Gigabyte RGB Fusion 2 GPU constants from OpenRGB; the Aorus Master exposes 5 zones.</summary>
 public static class RgbFusion2
 {
     public const int ZoneCount = 5;

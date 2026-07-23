@@ -4,14 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace AorusLcd.Core;
 
-/// <summary>
-/// Byte-exact port of GCC's Compress_RLE, used for animated-GIF frame uploads.
-/// Token grammar (head = u16 LE, bit15 = run flag, low 15 bits = pixel count):
-///   run     : &lt;count|0x8000 : u16 LE&gt; &lt;pixel : 2B&gt;  (only for &gt;=3 equal px)
-///   literal : &lt;count : u16 LE&gt; &lt;count pixels&gt;
-/// The firmware decoder mirrors this encoder, so the quirks are intentional -
-/// do not "optimize" them.
-/// </summary>
+/// <summary>Byte-exact GCC Compress_RLE: u16 LE header, bit15 run flag, low 15-bit count; runs need >=3 equal pixels, else literals.</summary>
 public static class RleEncoder
 {
     private const int MaxWindow = 0x7FFF;

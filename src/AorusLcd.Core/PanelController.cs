@@ -2,11 +2,7 @@ using System.Buffers.Binary;
 
 namespace AorusLcd.Core;
 
-/// <summary>
-/// High-level panel operations over an <see cref="II2cBus"/>. Sequencing and
-/// pacing match the working GCC captures: 0.5 s after BEGIN, 1.0 s after the F1
-/// header, ~10 ms between chunks.
-/// </summary>
+/// <summary>High-level panel operations with GCC pacing: 0.5 s after BEGIN, 1.0 s after F1, ~10 ms between chunks.</summary>
 public sealed class PanelController(II2cBus bus)
 {
     private const int PaceBeginMs = 500;
@@ -26,10 +22,7 @@ public sealed class PanelController(II2cBus bus)
         return _bus.Read(nbytes);
     }
 
-    /// <summary>
-    /// Presence check: send the EB 03 status query (the same poll GCC uses) and
-    /// return the 8-byte read-back. Throws if the controller does not answer.
-    /// </summary>
+    /// <summary>Send EB 03 status query and return the 8-byte read-back; throws if the controller does not answer.</summary>
     public byte[] Probe() => ReadCommand(Opcode.Probe, [0x03]);
 
     public void OpenLcd(bool on)
@@ -38,26 +31,14 @@ public sealed class PanelController(II2cBus bus)
     /// <summary>AA Save: persist the current LCD configuration to panel NVRAM.</summary>
     public void Save() => WriteFrame(ProtocolFrames.CmdFrame(Opcode.Save));
 
-    /// <summary>
-    /// Trigger the panel's built-in rainbow effect over the current text. Sent
-    /// after entering text mode, where the firmware colors the text by luminance.
-    /// It is the same 0xAA commit frame as <see cref="Save"/>; the effect is a
-    /// side effect of committing while in text mode.
-    /// </summary>
+    /// <summary>Trigger built-in text rainbow by committing the same 0xAA frame as <see cref="Save"/> while in text mode.</summary>
     public void ApplyTextEffect() => WriteFrame(ProtocolFrames.CmdFrame(Opcode.Save));
 
     /// <summary>E5 SetMode: byte5 = mode+1. Mode 7 maps to internal 9 (GCC quirk).</summary>
     public void SetMode(int mode)
         => WriteFrame(ProtocolFrames.CmdFrame(Opcode.SetMode, [(byte)((mode == 7 ? 9 : mode) + 1)]));
 
-    /// <summary>
-    /// E1 SetDisplay: enable/disable the panel's built-in sensor dashboard
-    /// widgets and their rotation interval. Sends one flag byte per element
-    /// (GpuTemp, GpuClock, GpuUsage, FanSpeed, RamClock, RamUsage, Fps, Tgp)
-    /// followed by the interval byte - the exact layout from ucVga.dll's
-    /// GvLcdApi.SetDisplay. Pass <see cref="LcdDisplayElements.None"/> to turn
-    /// the whole dashboard off (clean image with no overlay).
-    /// </summary>
+    /// <summary>E1 SetDisplay: one flag byte for GpuTemp/GpuClock/GpuUsage/FanSpeed/RamClock/RamUsage/Fps/Tgp, then interval.</summary>
     public void SetDisplay(LcdDisplayElements elements, int intervalSeconds)
     {
         var tail = new byte[9];
@@ -88,12 +69,7 @@ public sealed class PanelController(II2cBus bus)
 
     public void PowerOffMode() => WriteFrame(ProtocolFrames.CmdFrame(Opcode.PowerOff));
 
-    /// <summary>
-    /// E3 sensor feed: push live GPU values the panel's dashboard displays and
-    /// rotates through. Layout from AorusLcdService: temp, GPU clock(2),
-    /// usage, fan(2), RAM clock(2), RAM usage, FPS(2), TGP(2) - 16-bit fields
-    /// big-endian. Must be sent continuously (≈1 Hz) for the widgets to update.
-    /// </summary>
+    /// <summary>E3 feed layout: temp, GPU clock(2), usage, fan(2), RAM clock(2), RAM usage, FPS(2), TGP(2), 16-bit big-endian, ~1 Hz.</summary>
     public void SendSensorFeed(SensorSample s)
     {
         Span<byte> tail = stackalloc byte[13];
@@ -108,12 +84,7 @@ public sealed class PanelController(II2cBus bus)
         WriteFrame(ProtocolFrames.CmdFrame(Opcode.SensorFeed, tail));
     }
 
-    /// <summary>
-    /// EA SetImageTpl: configure an overlay template (color + image/data
-    /// positions) for image/gif/pet content. Layout from ucVga.dll's
-    /// GvLcdApi.SetImageTpl: type, RGB, image X/Y and data X/Y as 16-bit
-    /// big-endian pairs, and an enable flag.
-    /// </summary>
+    /// <summary>EA SetImageTpl layout: type, RGB, image X/Y and data X/Y as 16-bit big-endian pairs, plus enable flag.</summary>
     public void SetImageTemplate(LcdTemplate template)
     {
         Span<byte> tail = stackalloc byte[13];
@@ -165,10 +136,7 @@ public sealed class PanelController(II2cBus bus)
         return (elements, r[2]);
     }
 
-    /// <summary>
-    /// F4 GetLoop: current carousel modes and interval. Reads banks 1..5, each
-    /// returning up to 3 (mode+1) entries plus the interval in byte 0.
-    /// </summary>
+    /// <summary>F4 GetLoop reads banks 1..5, each returning up to 3 (mode+1) entries plus byte-0 interval.</summary>
     public (IReadOnlyList<int> Modes, int Interval) GetLoop()
     {
         var modes = new List<int>();
@@ -188,13 +156,7 @@ public sealed class PanelController(II2cBus bus)
         return (modes, interval);
     }
 
-    /// <summary>
-    /// Read the panel status shown by the GUI (firmware, mode, on/off, dashboard).
-    /// The carousel is intentionally NOT read here: <see cref="GetLoop"/> costs
-    /// five extra sequential bus round-trips that no status consumer uses, and
-    /// each one holds the shared I2C lock, stalling the sensor feed. Call
-    /// <see cref="GetLoop"/> explicitly when the carousel is actually needed.
-    /// </summary>
+    /// <summary>Read GUI status but skip <see cref="GetLoop"/>'s five locked bus round-trips unless carousel data is explicitly needed.</summary>
     public LcdStatus GetStatus()
     {
         var (mode, on) = GetMode();
@@ -213,10 +175,7 @@ public sealed class PanelController(II2cBus bus)
 
     private static ushort Clamp16(int v) => (ushort)Math.Clamp(v, 0, ushort.MaxValue);
 
-    /// <summary>
-    /// Write the upload frames with the pacing the panel firmware needs, keyed
-    /// off each frame's <see cref="UploadFrameKind"/> (never its byte content).
-    /// </summary>
+    /// <summary>Write upload frames paced by <see cref="UploadFrameKind"/>, never by frame byte content.</summary>
     public async Task SendUploadAsync(IReadOnlyList<UploadFrame> frames,
         int chunkDelayMs = DefaultChunkDelayMs, CancellationToken cancellationToken = default)
     {
@@ -233,11 +192,7 @@ public sealed class PanelController(II2cBus bus)
         }
     }
 
-    /// <summary>
-    /// Stream an upload and select its display mode. ORDER MATTERS: a GIF
-    /// streams to a live framebuffer, so SetMode goes BEFORE the upload;
-    /// image/text store to numbered framebuffers, so SetMode goes AFTER.
-    /// </summary>
+    /// <summary>Stream and select mode: GIF SetMode before upload; image/text SetMode after, because their framebuffers differ.</summary>
     public async Task UploadContentAsync(IReadOnlyList<UploadFrame> frames, int mode, bool isGif,
         bool setDisplayMode = true, int chunkDelayMs = DefaultChunkDelayMs,
         CancellationToken cancellationToken = default)

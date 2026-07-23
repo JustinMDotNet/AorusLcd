@@ -11,18 +11,7 @@ namespace AorusLcd.Gui.Services;
 /// <summary>Raised when no supported hardware/transport is available.</summary>
 public sealed class HardwareUnavailableException(string message) : Exception(message);
 
-/// <summary>
-/// Async facade over the AorusLcd.Core hardware operations for the GUI. Uses the
-/// Windows NVAPI transport; on other platforms it reports that hardware control
-/// is not yet available (the Linux i2c-dev backend is a planned drop-in via
-/// <see cref="II2cBus"/>).
-///
-/// Every operation runs on a worker thread and holds the cross-process
-/// <see cref="SystemBusLock"/> for its full duration, so a user command (e.g. a
-/// multi-second image upload) is never interleaved with the background service's
-/// sensor feed on the shared 0x61 bus. The located controllers are cached to
-/// avoid re-probing each call.
-/// </summary>
+/// <summary>GUI async facade over core hardware using NVAPI and full-operation <see cref="SystemBusLock"/>; controllers are cached.</summary>
 public sealed class HardwareService
 {
     private readonly Lazy<SystemBusLock> _busLock = new(() => new SystemBusLock());
@@ -165,13 +154,7 @@ public sealed class HardwareService
         }
     });
 
-    /// <summary>
-    /// Acquire the cross-process bus lock (Windows only). The returned handle is
-    /// disposed on the same worker thread that took it, honouring the mutex's
-    /// thread affinity. On unsupported platforms this is a no-op; the subsequent
-    /// <see cref="EnsurePanel"/>/<see cref="EnsureRgb"/> call raises the friendly
-    /// <see cref="HardwareUnavailableException"/>.
-    /// </summary>
+    /// <summary>Acquire Windows bus lock on the worker thread that will dispose it; unsupported platforms no-op before friendly failure.</summary>
     private IDisposable AcquireBus()
         => OperatingSystem.IsWindows() ? _busLock.Value.Acquire() : NoOpDisposable.Instance;
 

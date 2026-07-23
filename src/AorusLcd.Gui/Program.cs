@@ -1,13 +1,11 @@
-﻿using Avalonia;
+using Avalonia;
 using System;
 
 namespace AorusLcd.Gui;
 
 sealed class Program
 {
-    // Initialization code. Don't use any Avalonia, third-party APIs or any
-    // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
-    // yet and stuff might break.
+    // Avoid Avalonia, third-party APIs, or SynchronizationContext-dependent code before AppMain initializes them.
     [STAThread]
     public static void Main(string[] args) => BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
