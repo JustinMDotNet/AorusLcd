@@ -54,7 +54,7 @@ public sealed class HardwareService
         bool clearSensors, bool save, CancellationToken ct, bool applyTextEffect = false)
         => WithPanelAsync(panel =>
         {
-            var frames = ProtocolFrames.BuildUpload(ByteOps.Concat(Panel.Descriptor, le565), framebuffer);
+            var frames = ProtocolFrames.BuildUpload(Panel.Descriptor, le565, framebuffer);
             panel.UploadContentAsync(frames, mode, isGif: false, cancellationToken: ct)
                 .GetAwaiter().GetResult();
             if (applyTextEffect)

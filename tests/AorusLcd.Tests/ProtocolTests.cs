@@ -73,6 +73,33 @@ public class ProtocolTests
     }
 
     [Fact]
+    public void BuildUpload_PrefixMatchesConcatenatedPayload()
+    {
+        // The prefix overload must chunk the logical prefix+payload identically
+        // to concatenating first, including the header chunk count and padding.
+        var prefix = new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05 };
+        var payload = new byte[600];
+        for (int i = 0; i < payload.Length; i++)
+        {
+            payload[i] = (byte)(i & 0xFF);
+        }
+
+        var combined = new byte[prefix.Length + payload.Length];
+        prefix.CopyTo(combined, 0);
+        payload.CopyTo(combined, prefix.Length);
+
+        var expected = ProtocolFrames.BuildUpload(combined, Panel.FramebufferStatic);
+        var actual = ProtocolFrames.BuildUpload(prefix, payload, Panel.FramebufferStatic);
+
+        Assert.Equal(expected.Count, actual.Count);
+        for (int i = 0; i < expected.Count; i++)
+        {
+            Assert.Equal(expected[i].Kind, actual[i].Kind);
+            Assert.Equal(expected[i].Data, actual[i].Data);
+        }
+    }
+
+    [Fact]
     public void SetDisplay_EncodesElementFlagsAndInterval()
     {
         var bus = new CapturingBus();

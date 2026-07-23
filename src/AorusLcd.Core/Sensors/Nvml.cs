@@ -67,6 +67,18 @@ internal static class Nvml
         public byte[] BusId;
     }
 
+    // nvmlFanSpeedInfo_t: { version, fan (in), speed (out, RPM) }.
+    // version = NVML_STRUCT_VERSION(FanSpeedInfo, 1) = sizeof(struct) | (1 << 24).
+    [StructLayout(LayoutKind.Sequential)]
+    public struct FanSpeedInfo
+    {
+        public uint Version;
+        public uint Fan;
+        public uint Speed;
+    }
+
+    public const uint FanSpeedInfoV1 = 12u | (1u << 24);
+
     // 0 = NVML_SUCCESS. sensorType 0 = GPU; clockType 0 = graphics, 2 = mem.
     [DllImport(Lib, EntryPoint = "nvmlInit_v2")]
     public static extern int Init();
@@ -94,6 +106,11 @@ internal static class Nvml
 
     [DllImport(Lib, EntryPoint = "nvmlDeviceGetFanSpeed")]
     public static extern int GetFanSpeed(IntPtr device, out uint speedPercent);
+
+    // Actual fan RPM (per-fan), added in recent drivers. Absent on older ones,
+    // so callers must handle EntryPointNotFoundException and fall back.
+    [DllImport(Lib, EntryPoint = "nvmlDeviceGetFanSpeedRPM")]
+    public static extern int GetFanSpeedRpm(IntPtr device, ref FanSpeedInfo fanSpeed);
 
     [DllImport(Lib, EntryPoint = "nvmlDeviceGetPowerUsage")]
     public static extern int GetPowerUsage(IntPtr device, out uint milliwatts);

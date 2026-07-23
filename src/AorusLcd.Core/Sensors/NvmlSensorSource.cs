@@ -18,6 +18,7 @@ public sealed class NvmlSensorSource : ISensorSource
 
     private readonly IntPtr _device;
     private bool _initialized;
+    private static bool _fanRpmUnavailable;
 
     public NvmlSensorSource(uint? pciBusId = null)
     {
@@ -46,7 +47,7 @@ public sealed class NvmlSensorSource : ISensorSource
         int gpuClock = Nvml.GetClockInfo(device, ClockGraphics, out uint gc) == 0 ? (int)gc : 0;
         int ramClock = Nvml.GetClockInfo(device, ClockMemory, out uint mc) == 0 ? (int)mc : 0;
         var util = Nvml.GetUtilizationRates(device, out var u) == 0 ? u : default;
-        int fan = Nvml.GetFanSpeed(device, out uint f) == 0 ? (int)f : 0;
+        int fan = ReadFanRpm(device);
         int powerMw = Nvml.GetPowerUsage(device, out uint mw) == 0 ? (int)mw : 0;
 
         return new SensorSample
@@ -60,6 +61,34 @@ public sealed class NvmlSensorSource : ISensorSource
             Fps = 0,
             TgpWatts = (powerMw + 999) / 1000, // mW -> W, rounded up; panel prints the raw number
         };
+    }
+
+    /// <summary>
+    /// Read fan speed as RPM (the unit the panel's E3 fan field expects). Uses
+    /// the per-fan RPM API when the driver exposes it; on older drivers that
+    /// lack the export, falls back to <c>nvmlDeviceGetFanSpeed</c>, which returns
+    /// a 0-100 percentage. This is read-only telemetry - it never changes the
+    /// fan curve, which stays on the GPU's own control.
+    /// </summary>
+    private static int ReadFanRpm(IntPtr device)
+    {
+        if (!_fanRpmUnavailable)
+        {
+            try
+            {
+                var info = new Nvml.FanSpeedInfo { Version = Nvml.FanSpeedInfoV1, Fan = 0 };
+                if (Nvml.GetFanSpeedRpm(device, ref info) == 0)
+                {
+                    return (int)info.Speed;
+                }
+            }
+            catch (Exception e) when (e is EntryPointNotFoundException or DllNotFoundException)
+            {
+                _fanRpmUnavailable = true; // old driver: don't probe the missing export again
+            }
+        }
+
+        return Nvml.GetFanSpeed(device, out uint pct) == 0 ? (int)pct : 0;
     }
 
     /// <summary>
