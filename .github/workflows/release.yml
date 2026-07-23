@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # create the GitHub Release and upload assets
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      # NativeAOT links with the MSVC toolchain; put link.exe on PATH.
+      - name: Setup MSVC (NativeAOT linker)
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # Publish the service first (default output path) so the GUI project picks
+      # it up next to its own output for the in-app installer (see GUI .csproj).
+      - name: Publish background service (NativeAOT, win-x64)
+        run: dotnet publish src/AorusLcd.Service -c Release -r win-x64
+
+      - name: Publish GUI (self-contained single file, win-x64)
+        run: >
+          dotnet publish src/AorusLcd.Gui -c Release -r win-x64 --self-contained
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=none -o publish/self-contained
+
+      - name: Publish GUI (framework-dependent single file, win-x64)
+        run: >
+          dotnet publish src/AorusLcd.Gui -c Release -r win-x64 --no-self-contained
+          -p:PublishSingleFile=true -p:DebugType=none -o publish/framework-dependent
+
+      - name: Package artifacts
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}"
+          Compress-Archive -Path "publish/self-contained/*" `
+            -DestinationPath "AorusLcd-$v-win-x64-self-contained.zip"
+          Compress-Archive -Path "publish/framework-dependent/*" `
+            -DestinationPath "AorusLcd-$v-win-x64-framework-dependent.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            AorusLcd-*-win-x64-self-contained.zip
+            AorusLcd-*-win-x64-framework-dependent.zip
+          generate_release_notes: true
+          # Tags with a pre-release suffix (e.g. v1.0.0-alpha) are marked pre-release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
