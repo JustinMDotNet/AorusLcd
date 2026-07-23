@@ -90,7 +90,7 @@ public static class ProtocolFrames
     public static List<UploadFrame> BuildUpload(ReadOnlySpan<byte> prefix, ReadOnlySpan<byte> pdata,
         uint fbAddr, byte flag = 1, ushort nframes = 0, int delay = 0, byte? mode = null)
     {
-        int total = prefix.Length + pdata.Length;
+        int total = checked(prefix.Length + pdata.Length);
         uint nchunks = (uint)(total / FrameSize + 1);
         var frames = new List<UploadFrame>((int)nchunks + 3)
         {
