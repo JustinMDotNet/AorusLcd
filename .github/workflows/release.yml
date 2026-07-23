@@ -17,16 +17,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
       # NativeAOT links with the MSVC toolchain; put link.exe on PATH.
       - name: Setup MSVC (NativeAOT linker)
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@v1.13.0
 
       # Publish the service first (default output path) so the GUI project picks
       # it up next to its own output for the in-app installer (see GUI .csproj).
@@ -54,7 +54,7 @@ jobs:
             -DestinationPath "AorusLcd-$v-win-x64-framework-dependent.zip"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             AorusLcd-*-win-x64-self-contained.zip
