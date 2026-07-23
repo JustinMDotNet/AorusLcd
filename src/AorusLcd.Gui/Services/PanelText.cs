@@ -6,10 +6,7 @@ using Avalonia.Media.Imaging;
 
 namespace AorusLcd.Gui.Services;
 
-/// <summary>
-/// Cross-platform text rendering for the panel using Avalonia (no System.Drawing).
-/// Renders centered text on a 320x170 canvas and converts to LE-RGB565.
-/// </summary>
+/// <summary>Avalonia text rendering: centered text on 320x170 canvas converted to LE-RGB565.</summary>
 public static class PanelText
 {
     public static byte[] RenderLe565(string text, double size, Color foreground, Color background)

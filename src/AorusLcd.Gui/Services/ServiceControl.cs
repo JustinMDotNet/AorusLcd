@@ -17,16 +17,7 @@ public enum ServiceState
     Transitioning,
 }
 
-/// <summary>
-/// Manages the background <c>AorusLcdFeed</c> Windows service from the GUI:
-/// query its state (no elevation), and install / uninstall / start / stop it
-/// (each a single elevated <c>sc.exe</c> batch behind one UAC prompt). The GUI
-/// itself runs unelevated; only these service operations request elevation.
-///
-/// The service executable is a self-contained NativeAOT build shipped next to
-/// the GUI; on install it is copied to <see cref="InstalledExePath"/> under
-/// ProgramData so it keeps running from a stable, machine-wide location.
-/// </summary>
+/// <summary>Manages unelevated service state queries and elevated install/uninstall/start/stop for the NativeAOT feed service.</summary>
 [SupportedOSPlatform("windows")]
 public sealed class ServiceControl
 {
@@ -60,11 +51,7 @@ public sealed class ServiceControl
         }
     }
 
-    /// <summary>
-    /// Locate the bundled service exe to install from: preferring one shipped
-    /// next to the GUI, then a <c>service\</c> subfolder. Returns null if the
-    /// service build isn't present alongside the app.
-    /// </summary>
+    /// <summary>Find bundled service exe next to the GUI or under <c>service\</c>; null when not shipped with the app.</summary>
     public static string? FindBundledServiceExe()
     {
         string baseDir = AppContext.BaseDirectory;
@@ -83,10 +70,7 @@ public sealed class ServiceControl
         return null;
     }
 
-    /// <summary>
-    /// Copy the bundled exe into place and register + start the service, all in
-    /// one elevated batch. Throws if the bundled exe can't be found.
-    /// </summary>
+    /// <summary>Copy bundled exe into place and register/start the service in one elevated batch; throws if missing.</summary>
     public Task InstallAsync()
     {
         var source = FindBundledServiceExe()
@@ -94,17 +78,8 @@ public sealed class ServiceControl
                 "AorusLcd.Service.exe was not found next to the app. Publish the service and place it beside the GUI.");
         string dir = Path.GetDirectoryName(InstalledExePath)!;
         string dataDir = Path.GetDirectoryName(dir)!; // %ProgramData%\AorusLcd
-        // Single elevated batch. Critical steps are chained with && so a failure
-        // short-circuits and surfaces as a non-zero exit code (mkdir is allowed to
-        // fail when the dir already exists, hence & there).
-        //
-        // SECURITY: the service runs as LocalSystem, so its binary under bin\ must
-        // NOT be writable by standard users (that would be a privilege-escalation
-        // vector). We grant the interactive Users group Modify with (OI)(NP) -
-        // object-inherit, no-propagate - so it applies only to files created
-        // directly in %ProgramData%\AorusLcd (i.e. feed.json, which the unelevated
-        // GUI must update) and is NOT inherited into the bin\ subfolder holding the
-        // service exe.
+        // Elevated batch chains critical steps with &&; mkdir may already exist, so it uses & and failures still surface.
+        // SECURITY: Users get Modify only on direct ProgramData files (feed.json), not inherited into bin\ with the LocalSystem service exe.
         string batch =
             $"mkdir \"{dir}\" 2>nul & copy /y \"{source}\" \"{InstalledExePath}\" && " +
             $"icacls \"{dataDir}\" /grant *S-1-5-32-545:(OI)(NP)M && " +

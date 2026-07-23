@@ -2,13 +2,7 @@ using System.Runtime.Versioning;
 
 namespace AorusLcd.Core.Nvapi;
 
-/// <summary>
-/// <see cref="II2cBus"/> backed by NVAPI I2C on a specific physical GPU. Writes
-/// raw blocks (no register address) to <see cref="Address"/> on GPU port
-/// <see cref="Port"/> - the internal controller bus, where port 1 carries the
-/// Aorus LCD controller (0x61) and RGB controller (0x71/0x75). Disposal is a
-/// no-op because the GPU handle is owned by NVAPI.
-/// </summary>
+/// <summary>NVAPI I2C bus for one physical GPU/port; writes raw blocks to <see cref="Address"/> on <see cref="Port"/> and disposal is a no-op.</summary>
 [SupportedOSPlatform("windows")]
 public sealed class NvApiI2cBus(IntPtr gpuHandle, byte address = 0x61, byte port = 1) : II2cBus
 {

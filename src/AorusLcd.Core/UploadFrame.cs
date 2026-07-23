@@ -9,10 +9,5 @@ public enum UploadFrameKind
     End,
 }
 
-/// <summary>
-/// A single 256-byte upload frame tagged with its <see cref="UploadFrameKind"/>.
-/// Pacing is driven by <see cref="Kind"/> rather than by sniffing the frame
-/// bytes, so payload chunks that happen to start with a control opcode can never
-/// be misclassified.
-/// </summary>
+/// <summary>256-byte upload frame tagged by <see cref="UploadFrameKind"/> so pacing never depends on payload bytes.</summary>
 public readonly record struct UploadFrame(UploadFrameKind Kind, byte[] Data);

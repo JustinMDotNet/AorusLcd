@@ -5,12 +5,7 @@ using Microsoft.Win32;
 
 namespace AorusLcd.Gui.Services;
 
-/// <summary>
-/// Manages "start with the OS" (autostart). On Windows this is a per-user
-/// registry Run entry that launches the app with <c>--minimized</c> so it opens
-/// straight to the tray. Other platforms report unsupported for now (a Linux
-/// XDG autostart .desktop file is a planned addition alongside the i2c backend).
-/// </summary>
+/// <summary>Per-user Windows Run autostart with <c>--minimized</c>; other platforms report unsupported for now.</summary>
 public static class StartupService
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";

@@ -2,20 +2,11 @@ using System.Runtime.Versioning;
 
 namespace AorusLcd.Core.Nvapi;
 
-/// <summary>
-/// Locates the GPU whose internal I2C port answers the LCD controller's EB 03
-/// status query at 0x61. Analogous to the Linux tool's bus autodetection, but
-/// over NVAPI physical GPUs / ports instead of <c>/dev/i2c-N</c>. Refuses to
-/// return a bus that does not answer, so nothing is ever written blindly.
-/// </summary>
+/// <summary>Locates an NVAPI GPU/port whose 0x61 LCD controller answers EB 03, refusing buses that do not respond.</summary>
 [SupportedOSPlatform("windows")]
 public static class NvApiPanelLocator
 {
-    /// <summary>
-    /// Find an LCD-capable bus. Enumerates physical GPUs and probes the given
-    /// <paramref name="port"/> at 0x61. Returns the first that answers, along
-    /// with the GPU name, or null if none respond.
-    /// </summary>
+    /// <summary>Find the first physical GPU where 0x61 answers on <paramref name="port"/>, returning its bus/name or null.</summary>
     public static (NvApiI2cBus Bus, string GpuName)? Locate(byte port = 1)
     {
         foreach (var gpu in NvApi.EnumPhysicalGpus())
@@ -29,10 +20,7 @@ public static class NvApiPanelLocator
         return null;
     }
 
-    /// <summary>
-    /// Describe every physical GPU and whether 0x61 answers on <paramref name="port"/>.
-    /// Used by the <c>probe</c> command for diagnostics.
-    /// </summary>
+    /// <summary>Describe each physical GPU and whether 0x61 answers on <paramref name="port"/> for probe diagnostics.</summary>
     public static IEnumerable<(string GpuName, bool Responds, string Detail)> Survey(byte port = 1)
     {
         foreach (var gpu in NvApi.EnumPhysicalGpus())

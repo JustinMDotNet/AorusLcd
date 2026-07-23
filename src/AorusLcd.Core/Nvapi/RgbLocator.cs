@@ -3,14 +3,7 @@ using AorusLcd.Core.Rgb;
 
 namespace AorusLcd.Core.Nvapi;
 
-/// <summary>
-/// Locates the Aorus GPU RGB controller. To avoid writing to unrelated devices,
-/// discovery is restricted to the GPU already verified as the Aorus card (its
-/// LCD controller answers the <c>EB 03</c> status query at 0x61) and to the two
-/// documented RGB addresses (0x71, or 0x75 on the RTX 5090 Master). The 5090
-/// Master RGB controller is write-only, so presence is detected by a write-ACK
-/// of the harmless <c>0xAB</c> query rather than a read that would wedge the bus.
-/// </summary>
+/// <summary>Finds the Aorus RGB controller only on the LCD-verified GPU, probing 0x71/0x75 with harmless 0xAB write-ACK.</summary>
 [SupportedOSPlatform("windows")]
 public static class RgbLocator
 {
@@ -49,10 +42,7 @@ public static class RgbLocator
         }
     }
 
-    /// <summary>
-    /// GPUs confirmed to be the Aorus LCD card: the LCD controller at 0x61
-    /// answers its status query. This gates RGB writes to the correct card.
-    /// </summary>
+    /// <summary>LCD-verified Aorus GPUs whose 0x61 controller answers status; gates RGB writes to the correct card.</summary>
     private static IEnumerable<IntPtr> AorusGpus()
     {
         foreach (var gpu in NvApi.EnumPhysicalGpus())

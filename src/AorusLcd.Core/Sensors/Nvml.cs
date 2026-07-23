@@ -2,12 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace AorusLcd.Core.Sensors;
 
-/// <summary>
-/// Minimal P/Invoke layer over NVIDIA's Management Library (NVML), which ships
-/// with the driver (<c>nvml.dll</c> on Windows, <c>libnvidia-ml.so.1</c> on
-/// Linux). NVML is documented and stable, so it is the preferred source for the
-/// panel's live sensor feed. The native library name is resolved per-OS.
-/// </summary>
+/// <summary>Minimal cross-OS NVML P/Invoke layer for documented driver telemetry used by the panel sensor feed.</summary>
 internal static class Nvml
 {
     private const string Lib = "nvml";

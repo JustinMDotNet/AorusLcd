@@ -5,18 +5,7 @@ using System.Threading;
 
 namespace AorusLcd.Core;
 
-/// <summary>
-/// Cross-process lock serializing all access to the GPU I2C bus (address 0x61).
-/// Because the background Windows service (LocalSystem) and the desktop GUI (the
-/// logged-in user) both talk to the same controller, their writes must never
-/// interleave - an E3 sensor frame landing in the middle of an image upload
-/// would corrupt it. Both processes acquire this <c>Global\</c> named mutex
-/// around every logical bus operation.
-///
-/// The mutex is created with a permissive ACL (Everyone: full control) so that
-/// whichever process creates it first - often the service at boot, before any
-/// user logs in - leaves it openable by the other.
-/// </summary>
+/// <summary>Global mutex serializing GUI/service access to GPU I2C 0x61; permissive ACL lets service and user process share it.</summary>
 [SupportedOSPlatform("windows")]
 public sealed class SystemBusLock : IDisposable
 {
@@ -33,10 +22,7 @@ public sealed class SystemBusLock : IDisposable
         _mutex = MutexAcl.Create(initiallyOwned: false, MutexName, out _, security);
     }
 
-    /// <summary>
-    /// Acquire the bus. Dispose the returned handle to release. A generous
-    /// timeout accommodates multi-second uploads held by the other process.
-    /// </summary>
+    /// <summary>Acquire the bus mutex; dispose returned handle to release, with timeout for multi-second uploads.</summary>
     public IDisposable Acquire(int timeoutMs = 60000)
     {
         bool acquired;

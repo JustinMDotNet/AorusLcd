@@ -6,12 +6,7 @@ using Avalonia.Media;
 
 namespace AorusLcd.Gui.Converters;
 
-/// <summary>
-/// Two-way converter between a bare <c>RRGGBB</c> hex string (the view-model's
-/// representation) and an Avalonia <see cref="Color"/> for <c>ColorPicker</c>.
-/// Invalid hex falls back to black rather than throwing, matching the rest of
-/// the UI's forgiving colour handling.
-/// </summary>
+/// <summary>Two-way bare <c>RRGGBB</c> ↔ Avalonia <see cref="Color"/> converter; invalid hex falls back to black.</summary>
 public sealed class HexColorConverter : IValueConverter
 {
     public static readonly HexColorConverter Instance = new();

@@ -3,12 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace AorusLcd.Core.Sensors;
 
-/// <summary>
-/// Persisted configuration for the background sensor feed, shared between the
-/// GUI (which writes it) and the Windows service (which reads it). Stored as
-/// JSON at <see cref="DefaultPath"/> under ProgramData so it is machine-wide and
-/// readable by the service running under its own account.
-/// </summary>
+/// <summary>Machine-wide ProgramData JSON config shared by GUI and service for the background sensor feed.</summary>
 public sealed record FeedConfig
 {
     /// <summary>Dashboard elements to display (bitmask of <see cref="LcdDisplayElements"/>).</summary>
@@ -47,12 +42,7 @@ public sealed record FeedConfig
         return new FeedConfig();
     }
 
-    /// <summary>
-    /// Persist the config, creating the directory if needed. Writes via a
-    /// same-directory temp file then atomically replaces the target, so a
-    /// concurrent reader (the service's file watcher) never observes a
-    /// half-written, unparseable file that would look like a disabled config.
-    /// </summary>
+    /// <summary>Persist via same-directory temp file and atomic replace so watchers never see half-written disabled-looking JSON.</summary>
     public async Task SaveAsync(string? path = null, CancellationToken cancellationToken = default)
     {
         path ??= DefaultPath;

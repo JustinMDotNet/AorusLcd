@@ -5,20 +5,14 @@ using Avalonia.Media.Imaging;
 
 namespace AorusLcd.Gui.Services;
 
-/// <summary>
-/// Cross-platform image conversion for the panel using Avalonia's own imaging
-/// (no System.Drawing), producing the panel's 320x170 little-endian RGB565
-/// frame via <see cref="Rgb565Encoder"/>.
-/// </summary>
+/// <summary>Avalonia image conversion to the panel 320x170 little-endian RGB565 frame via <see cref="Rgb565Encoder"/>.</summary>
 public static class PanelImage
 {
     /// <summary>Load an image file and convert it to a 320x170 LE-RGB565 frame.</summary>
     public static byte[] LoadLe565(string path)
     {
         using var stream = File.OpenRead(path);
-        // Decode size-constrained: a full-resolution photo would allocate
-        // hundreds of MB just to produce a 320x170 frame. 2x the panel width
-        // preserves downscale quality without decoding at native resolution.
+        // Decode size-constrained at 2x panel width to preserve downscale quality without huge full-photo allocations.
         using var source = Bitmap.DecodeToWidth(stream, Panel.Width * 2, BitmapInterpolationMode.HighQuality);
         return ToLe565(source);
     }

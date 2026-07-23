@@ -1,10 +1,6 @@
 namespace AorusLcd.Core;
 
-/// <summary>
-/// Overlay template configuration for <c>SetImageTpl</c> (ucVga.dll
-/// <c>TPL_CFG</c>): a text/data color, the image and data overlay positions,
-/// and whether the template is enabled.
-/// </summary>
+/// <summary><c>SetImageTpl</c>/<c>TPL_CFG</c> overlay config: color, image/data positions, and enabled state.</summary>
 public sealed class LcdTemplate
 {
     public LcdTemplateType Type { get; init; } = LcdTemplateType.Image;

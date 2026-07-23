@@ -1,9 +1,6 @@
 namespace AorusLcd.Core;
 
-/// <summary>
-/// Panel display modes (ucVga.dll <c>DisplayMode</c> enum). 0-2 are Gigabyte's
-/// built-in stat screens; 3-6 are user content; 7 is the built-in carousel.
-/// </summary>
+/// <summary>Panel modes from ucVga.dll <c>DisplayMode</c>: 0-2 built-in stats, 3-6 user content, 7 carousel.</summary>
 public enum LcdMode
 {
     Faith1 = 0,

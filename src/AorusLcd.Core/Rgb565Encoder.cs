@@ -1,17 +1,9 @@
 namespace AorusLcd.Core;
 
-/// <summary>
-/// Converts source pixels into the panel's little-endian RGB565 frame format.
-/// Pure and hardware-free. The <c>EncodeBgra</c>/<c>EncodeBgr</c> overloads fuse
-/// the channel reorder and the 565 pack into a single pass, avoiding an
-/// intermediate RGB888 buffer.
-/// </summary>
+/// <summary>Converts pixels to panel little-endian RGB565, fusing channel reorder and 565 pack without an RGB888 buffer.</summary>
 public static class Rgb565Encoder
 {
-    /// <summary>
-    /// RGB888 (length = pixelCount * 3, row-major) -> little-endian RGB565
-    /// (length = pixelCount * 2).
-    /// </summary>
+    /// <summary>Convert row-major RGB888 (pixelCount * 3) to little-endian RGB565 (pixelCount * 2).</summary>
     public static byte[] Encode(ReadOnlySpan<byte> rgb888)
     {
         int pixels = rgb888.Length / 3;

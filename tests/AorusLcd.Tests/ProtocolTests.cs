@@ -2,10 +2,7 @@ using AorusLcd.Core;
 
 namespace AorusLcd.Tests;
 
-/// <summary>
-/// Byte-parity tests ported from the reference <c>run_selftest()</c>, plus
-/// structural checks on the protocol frame builders.
-/// </summary>
+/// <summary>Byte-parity tests from reference <c>run_selftest()</c> plus protocol frame builder checks.</summary>
 public class ProtocolTests
 {
     [Fact]

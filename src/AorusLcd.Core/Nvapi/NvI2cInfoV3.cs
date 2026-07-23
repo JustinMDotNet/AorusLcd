@@ -2,10 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace AorusLcd.Core.Nvapi;
 
-/// <summary>
-/// Managed mirror of NVAPI's <c>NV_I2C_INFO_V3</c>. Sequential layout with the
-/// default x64 packing reproduces the native field offsets (pointers 8-aligned).
-/// </summary>
+/// <summary>Managed <c>NV_I2C_INFO_V3</c> mirror; sequential x64 layout keeps native offsets, including 8-aligned pointers.</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct NvI2cInfoV3
 {
