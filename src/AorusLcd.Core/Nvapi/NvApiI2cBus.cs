@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
 namespace AorusLcd.Core.Nvapi;
@@ -24,39 +23,34 @@ public sealed class NvApiI2cBus(IntPtr gpuHandle, byte address = 0x61, byte port
 
     public void Write(ReadOnlySpan<byte> data)
     {
-        var buffer = data.ToArray();
-        var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-        try
+        unsafe
         {
-            var info = BuildInfo(handle.AddrOfPinnedObject(), (uint)buffer.Length);
-            int status = NvApi.I2CWriteEx(gpuHandle, ref info);
-            if (status != 0)
+            fixed (byte* ptr = data)
             {
-                throw new NvApiException($"NvAPI_I2CWriteEx (0x{Address:X2} port {Port})", status);
+                var info = BuildInfo((IntPtr)ptr, (uint)data.Length);
+                int status = NvApi.I2CWriteEx(gpuHandle, ref info);
+                if (status != 0)
+                {
+                    throw new NvApiException($"NvAPI_I2CWriteEx (0x{Address:X2} port {Port})", status);
+                }
             }
-        }
-        finally
-        {
-            handle.Free();
         }
     }
 
     public byte[] Read(int count)
     {
         var buffer = new byte[count];
-        var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-        try
+        unsafe
         {
-            var info = BuildInfo(handle.AddrOfPinnedObject(), (uint)count);
-            int status = NvApi.I2CReadEx(gpuHandle, ref info);
-            if (status != 0)
+            fixed (byte* ptr = buffer)
             {
-                throw new NvApiException($"NvAPI_I2CReadEx (0x{Address:X2} port {Port})", status);
+                var info = BuildInfo((IntPtr)ptr, (uint)count);
+                int status = NvApi.I2CReadEx(gpuHandle, ref info);
+                if (status != 0)
+                {
+                    throw new NvApiException($"NvAPI_I2CReadEx (0x{Address:X2} port {Port})", status);
+                }
             }
-        }
-        finally
-        {
-            handle.Free();
         }
         return buffer;
     }

@@ -79,18 +79,59 @@ public static class ProtocolFrames
     /// </summary>
     public static List<UploadFrame> BuildUpload(ReadOnlySpan<byte> pdata, uint fbAddr,
         byte flag = 1, ushort nframes = 0, int delay = 0, byte? mode = null)
+        => BuildUpload(default, pdata, fbAddr, flag, nframes, delay, mode);
+
+    /// <summary>
+    /// Same as <see cref="BuildUpload(ReadOnlySpan{byte},uint,byte,ushort,int,byte?)"/>
+    /// but chunks the logical concatenation of <paramref name="prefix"/> and
+    /// <paramref name="pdata"/> directly, so callers that prepend a fixed
+    /// descriptor (image/text) never allocate a full combined payload buffer.
+    /// </summary>
+    public static List<UploadFrame> BuildUpload(ReadOnlySpan<byte> prefix, ReadOnlySpan<byte> pdata,
+        uint fbAddr, byte flag = 1, ushort nframes = 0, int delay = 0, byte? mode = null)
     {
-        uint nchunks = (uint)(pdata.Length / FrameSize + 1);
+        int total = checked(prefix.Length + pdata.Length);
+        uint nchunks = (uint)(total / FrameSize + 1);
         var frames = new List<UploadFrame>((int)nchunks + 3)
         {
             new(UploadFrameKind.Begin, F2Frame(1)),
-            new(UploadFrameKind.Header, MakeF1Header(fbAddr, nchunks, nframes, delay, pdata.Length, flag, mode)),
+            new(UploadFrameKind.Header, MakeF1Header(fbAddr, nchunks, nframes, delay, total, flag, mode)),
         };
-        foreach (var chunk in ChunkPayload(pdata))
+        for (int c = 0; c < nchunks; c++)
         {
+            int start = c * FrameSize;
+            var chunk = new byte[FrameSize];
+            int len = Math.Min(FrameSize, total - start);
+            if (len > 0)
+            {
+                CopyLogical(prefix, pdata, start, len, chunk);
+            }
             frames.Add(new UploadFrame(UploadFrameKind.Chunk, chunk));
         }
         frames.Add(new UploadFrame(UploadFrameKind.End, F2Frame(2)));
         return frames;
+    }
+
+    /// <summary>
+    /// Copy <paramref name="count"/> bytes starting at logical offset
+    /// <paramref name="start"/> from the concatenation <paramref name="a"/> +
+    /// <paramref name="b"/> into <paramref name="dst"/>.
+    /// </summary>
+    private static void CopyLogical(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b,
+        int start, int count, Span<byte> dst)
+    {
+        int written = 0;
+        if (start < a.Length)
+        {
+            int n = Math.Min(count, a.Length - start);
+            a.Slice(start, n).CopyTo(dst);
+            written = n;
+        }
+        int bStart = Math.Max(0, start - a.Length);
+        if (written < count && bStart < b.Length)
+        {
+            int n = Math.Min(count - written, b.Length - bStart);
+            b.Slice(bStart, n).CopyTo(dst[written..]);
+        }
     }
 }
