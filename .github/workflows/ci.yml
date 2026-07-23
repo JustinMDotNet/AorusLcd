@@ -34,3 +34,27 @@ jobs:
 
       - name: Test
         run: dotnet test --no-build -c Release --verbosity normal
+
+  # Validate the release-critical NativeAOT publish on every push/PR. The AOT
+  # service is only produced by the Release workflow (tag-triggered), so an
+  # AOT/trimming/interop regression would otherwise stay hidden until a release
+  # is cut. This job compiles it the same way Release does (needs the MSVC
+  # linker) so breakage surfaces here first. It does not upload artifacts.
+  aot-publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      # NativeAOT links with the MSVC toolchain; put link.exe on PATH.
+      - name: Setup MSVC (NativeAOT linker)
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+
+      - name: Publish background service (NativeAOT, win-x64)
+        run: dotnet publish src/AorusLcd.Service -c Release -r win-x64 -p:DebugType=none
