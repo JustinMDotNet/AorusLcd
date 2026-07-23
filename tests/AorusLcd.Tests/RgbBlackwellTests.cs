@@ -1,4 +1,5 @@
 using AorusLcd.Core;
+using AorusLcd.Core.Nvapi;
 using AorusLcd.Core.Rgb;
 
 namespace AorusLcd.Tests;
@@ -96,6 +97,31 @@ public class RgbBlackwellTests
         Assert.Equal(RgbFusion2Blackwell.RegSave, bus.Writes[0][0]);
         Assert.Equal(0x01, bus.Writes[0][1]);
     }
+
+    [Fact]
+    public void ColorShift_CapsNumColorsToPacketCapacity()
+    {
+        var bus = new MultiCapturingBus();
+        var many = new RgbColor[RgbFusion2Blackwell.MaxColors + 5];
+        Array.Fill(many, new RgbColor(1, 2, 3));
+        Controller(bus).SetEffect(RgbBlackwellMode.ColorShift, many,
+            RgbFusion2Blackwell.SpeedNormal, 0x0A);
+
+        Assert.Equal(RgbFusion2Blackwell.MaxColors, bus.Writes[0][10]); // never advertises more than fits
+    }
+
+    [Theory]
+    [InlineData("NVIDIA GeForce RTX 5090", RgbControllerKind.Blackwell)]
+    [InlineData("NVIDIA GeForce RTX 5080", RgbControllerKind.Blackwell)]
+    [InlineData("NVIDIA GeForce RTX 5060 Ti", RgbControllerKind.Blackwell)]
+    [InlineData("NVIDIA GeForce RTX 5050", RgbControllerKind.Blackwell)]
+    [InlineData("NVIDIA RTX 5000 Ada Generation", RgbControllerKind.Legacy)]
+    [InlineData("NVIDIA RTX A5000", RgbControllerKind.Legacy)]
+    [InlineData("NVIDIA GeForce RTX 4090", RgbControllerKind.Legacy)]
+    [InlineData("NVIDIA GeForce RTX 3080", RgbControllerKind.Legacy)]
+    [InlineData(null, RgbControllerKind.Legacy)]
+    public void ClassifyByName_DistinguishesBlackwellFromWorkstationAndOlder(string? name, RgbControllerKind expected)
+        => Assert.Equal(expected, RgbLocator.ClassifyByName(name));
 
     private sealed class MultiCapturingBus : II2cBus
     {

@@ -64,7 +64,10 @@ public sealed class RgbFusion2BlackwellController(II2cBus bus)
         byte type = mode == RgbBlackwellMode.Direct
             ? RgbFusion2Blackwell.RegColor
             : RgbFusion2Blackwell.RegMode;
-        byte numColors = IsMultiColor(mode) ? (byte)colors.Length : (byte)0;
+        // Cap to what actually fits so numColors never advertises more triples than the packet carries.
+        byte numColors = IsMultiColor(mode)
+            ? (byte)Math.Min(colors.Length, RgbFusion2Blackwell.MaxColors)
+            : (byte)0;
 
         var packet = new byte[RgbFusion2Blackwell.PacketSize];
         packet[0] = type;

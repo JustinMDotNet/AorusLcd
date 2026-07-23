@@ -19,6 +19,9 @@ public static class RgbFusion2Blackwell
     // the RTX 5090 Master (OpenRGB's Master layouts also use 11, not 12).
     public const int ColorDataOffset = 11;
 
+    /// <summary>Max RGB triples that fit in one packet after the colour-data offset.</summary>
+    public const int MaxColors = (PacketSize - ColorDataOffset) / 3;
+
     public const byte BrightnessMin = 0x01;
     public const byte BrightnessMax = 0x0A;
 
