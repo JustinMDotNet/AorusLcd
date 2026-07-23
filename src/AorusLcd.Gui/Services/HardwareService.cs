@@ -18,6 +18,8 @@ public sealed class HardwareService
     private PanelController? _panel;
     private string _gpuName = "-";
     private RgbFusion2Controller? _rgb;
+    private RgbFusion2BlackwellController? _rgbBlackwell;
+    private RgbControllerKind? _rgbKind;
     private byte _rgbAddress;
 
     public bool IsSupportedPlatform => OperatingSystem.IsWindows();
@@ -103,16 +105,29 @@ public sealed class HardwareService
 
     // ---- RGB ---------------------------------------------------------------
 
-    public Task<(string GpuName, byte Address)> ConnectRgbAsync()
-        => WithRgbAsync(_ => (_gpuName, _rgbAddress));
+    /// <summary>The detected RGB protocol generation, or null until RGB is located.</summary>
+    public RgbControllerKind? RgbKind => _rgbKind;
 
+    public Task<(string GpuName, byte Address, RgbControllerKind Kind)> ConnectRgbAsync()
+        => WithRgbLocatedAsync(() => (_gpuName, _rgbAddress, _rgbKind!.Value));
+
+    // Legacy 8-byte controller (pre-Blackwell cards).
     public Task SetRgbStaticAsync(RgbColor color, byte brightness)
-        => WithRgbAsync(rgb => rgb.SetStatic(color, brightness));
+        => WithLegacyRgbAsync(rgb => rgb.SetStatic(color, brightness));
 
     public Task SetRgbEffectAsync(RgbMode mode, RgbColor[] colors, byte speed, byte brightness)
-        => WithRgbAsync(rgb => rgb.SetEffect(mode, colors, speed, brightness));
+        => WithLegacyRgbAsync(rgb => rgb.SetEffect(mode, colors, speed, brightness));
 
-    public Task RgbOffAsync() => WithRgbAsync(rgb => rgb.Off());
+    public Task RgbOffAsync() => WithLegacyRgbAsync(rgb => rgb.Off());
+
+    // Blackwell 64-byte controller (RTX 50-series cards).
+    public Task SetRgbBlackwellStaticAsync(RgbColor color, byte brightness)
+        => WithBlackwellRgbAsync(rgb => rgb.SetStatic(color, brightness));
+
+    public Task SetRgbBlackwellEffectAsync(RgbBlackwellMode mode, RgbColor[] colors, byte speed, byte brightness)
+        => WithBlackwellRgbAsync(rgb => rgb.SetEffect(mode, colors, speed, brightness));
+
+    public Task RgbBlackwellOffAsync() => WithBlackwellRgbAsync(rgb => rgb.Off());
 
     // ---- internals ---------------------------------------------------------
 
@@ -135,20 +150,26 @@ public sealed class HardwareService
         }
     });
 
-    private Task WithRgbAsync(Action<RgbFusion2Controller> action)
-        => WithRgbAsync(rgb => { action(rgb); return true; });
+    private Task WithLegacyRgbAsync(Action<RgbFusion2Controller> action)
+        => WithRgbLocatedAsync(() => { action(EnsureLegacyRgb()); return true; });
 
-    private Task<T> WithRgbAsync<T>(Func<RgbFusion2Controller, T> action) => Task.Run(() =>
+    private Task WithBlackwellRgbAsync(Action<RgbFusion2BlackwellController> action)
+        => WithRgbLocatedAsync(() => { action(EnsureBlackwellRgb()); return true; });
+
+    private Task<T> WithRgbLocatedAsync<T>(Func<T> action) => Task.Run(() =>
     {
         using (AcquireBus())
         {
             try
             {
-                return action(EnsureRgb());
+                EnsureRgbLocated();
+                return action();
             }
             catch (NvApiException)
             {
                 _rgb = null;
+                _rgbBlackwell = null;
+                _rgbKind = null;
                 throw;
             }
         }
@@ -176,14 +197,15 @@ public sealed class HardwareService
         return _panel;
     }
 
-    private RgbFusion2Controller EnsureRgb()
+    /// <summary>Locate the RGB controller once, caching its generation, address, and the matching driver.</summary>
+    private void EnsureRgbLocated()
     {
         RequireWindows();
-        if (_rgb is not null)
+        if (_rgbKind is not null)
         {
-            return _rgb;
+            return;
         }
-        var located = RgbLocator.Locate();
+        var located = RgbLocator.LocateBus();
         if (located is null)
         {
             throw new HardwareUnavailableException(
@@ -191,9 +213,24 @@ public sealed class HardwareService
         }
         _gpuName = located.Value.GpuName;
         _rgbAddress = located.Value.Address;
-        _rgb = located.Value.Controller;
-        return _rgb;
+        _rgbKind = located.Value.Kind;
+        if (located.Value.Kind == RgbControllerKind.Blackwell)
+        {
+            _rgbBlackwell = new RgbFusion2BlackwellController(located.Value.Bus);
+        }
+        else
+        {
+            _rgb = new RgbFusion2Controller(located.Value.Bus);
+        }
     }
+
+    private RgbFusion2Controller EnsureLegacyRgb()
+        => _rgb ?? throw new HardwareUnavailableException(
+            "This GPU uses the Blackwell RGB protocol; use the Blackwell RGB controls.");
+
+    private RgbFusion2BlackwellController EnsureBlackwellRgb()
+        => _rgbBlackwell ?? throw new HardwareUnavailableException(
+            "This GPU uses the legacy RGB protocol; use the legacy RGB controls.");
 
     private void RequireWindows()
     {

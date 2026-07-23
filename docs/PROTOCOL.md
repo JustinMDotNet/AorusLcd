@@ -37,7 +37,7 @@ the same one GCC uses.
 | --- | --- | --- |
 | `0x61` | **LCD controller** | All LCD writes target this. |
 | `0x71` | RGB controller | Standard RGB Fusion 2 GPU address. |
-| `0x75` | RGB controller (RTX 50-series) | The RTX 5090 Master answers here, **write-only** - it ACKs writes but does not reply to reads. Auto-detected by write-ACK; never issue a read (it wedges the I2C engine). |
+| `0x75` | RGB controller (RTX 50-series) | The RTX 5090 Master answers here, **write-only** - it ACKs writes but does not reply to reads. RTX 50-series cards use the newer **64-byte Blackwell** protocol here (see §7a); older cards use the legacy 8-byte one at `0x71`. Auto-detected by write-ACK + GPU generation; never issue a read (it wedges the I2C engine). |
 | `0x76` | **"LcdEx"** (newer panels) | A different, newer LCD protocol seen in the decompile. **Not implemented** - this project speaks only legacy `0x61`. |
 
 **Presence probe (never write blind):** before any LCD write, send the `EB 03`
@@ -302,6 +302,43 @@ NAKs back-to-back writes, so pace ~20 ms between packets (with a small retry).
 | Speed | `0x00` (slowest) .. `0x05` (fastest); `0x02` normal |
 
 Code: `Rgb/RgbFusion2.cs`, `Rgb/RgbFusion2Controller.cs`, `Rgb/RgbColor.cs`.
+
+### 7a. RGB Fusion 2 "Blackwell" (RTX 50-series)
+
+RTX 50-series Aorus cards (e.g. the **RTX 5090 Master**, SSID `1458:416E`) answer
+at **`0x75`** with a newer **64-byte** protocol (from OpenRGB's
+`GigabyteRGBFusion2BlackwellGPUController`), not the legacy 8-byte one above. GCC
+itself uses this protocol on these cards. The tool selects it by **GPU
+generation** (name), keeping the legacy protocol for pre-Blackwell cards.
+
+64-byte packet layout (byte 0 = register):
+
+```
+[0]  register: 0x12 = mode (throttled), 0x16 = direct/color, 0x13 = save
+[1]  0x01
+[2]  mode
+[3]  speed        (0x01 slowest .. 0x06 fastest; 0x03 normal)
+[4]  brightness   (0x01 .. 0x0A; breathing forces max)
+[5..7] primary R,G,B
+[8]  0x00
+[9]  zone index
+[10] numColors    (>0 only for mode-specific colour effects)
+[12..] appended R,G,B triples for mode-specific effects (gaming layout)
+```
+
+The AORUS 5090/5080 Master "gaming" layout sends **6 zone packets** per update
+then a `0x13` save. Modes: Static `0x01`, Direct `0x00`, Breathing `0x02`,
+Flashing `0x03`, DualFlashing `0x04`, ColorCycle `0x05`, Wave `0x06`, Gradient
+`0x07`, ColorShift `0x08`, Tricolor `0x09`, Dazzle `0x0A`. The controller is
+**write-only** (no read-back), so presence is a write-ACK probe and the
+generation is decided by name, never a read.
+
+> **Hardware validation status:** the packet format is a faithful port of
+> OpenRGB's tested driver and is covered by byte-layout unit tests, but has not
+> yet been confirmed on physical hardware from this project.
+
+Code: `Rgb/RgbFusion2Blackwell.cs`, `Rgb/RgbFusion2BlackwellController.cs`,
+`Nvapi/RgbLocator.cs`.
 
 ---
 
