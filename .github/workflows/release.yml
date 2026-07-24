@@ -50,13 +50,13 @@ jobs:
           -p:Version=${{ steps.ver.outputs.version }} -o publish/framework-dependent
 
       # Bundle the service exe next to the GUI (deterministic - independent of the
-      # csproj auto-copy) and drop native-package PDBs so artifacts stay lean.
+      # csproj auto-copy) and drop native-package PDBs (incl. runtimes/ subdirs).
       - name: Bundle service + trim symbols
         shell: pwsh
         run: |
           foreach ($dir in "publish/self-contained", "publish/framework-dependent") {
             Copy-Item "publish/service/AorusLcd.Service.exe" "$dir/AorusLcd.Service.exe" -Force
-            Get-ChildItem $dir -Filter *.pdb | Remove-Item -Force
+            Get-ChildItem $dir -Recurse -Filter *.pdb | Remove-Item -Force
           }
 
       - name: Build installer (Inno Setup)
