@@ -64,3 +64,8 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}
 ; Stop and remove the background service (if the user installed it) so uninstall is clean.
 Filename: "{sys}\sc.exe"; Parameters: "stop {#MyServiceName}"; Flags: runhidden; RunOnceId: "StopAorusLcdFeed"
 Filename: "{sys}\sc.exe"; Parameters: "delete {#MyServiceName}"; Flags: runhidden; RunOnceId: "DeleteAorusLcdFeed"
+
+[UninstallDelete]
+; Remove the machine-wide files the app created outside {app}: the installed
+; service binary plus its config/log under %ProgramData%\AorusLcd.
+Type: filesandordirs; Name: "{commonappdata}\AorusLcd"
