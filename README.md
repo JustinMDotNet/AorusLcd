@@ -123,6 +123,21 @@ recovered `GvLcdApi` command set is implemented.
 - **Linux hardware backend** - the UI and imaging are already cross-platform; an
   i2c-dev transport is planned to match the reference tool.
 
+## Install
+
+Grab the latest [release](https://github.com/JustinMDotNet/AorusLcd/releases) and
+either:
+
+- **Installer (recommended)** - run `AorusLcd-<version>-setup.exe`. It installs to
+  Program Files, adds a Start Menu shortcut, and registers an Add/Remove Programs
+  entry (which also removes the background service on uninstall).
+- **Portable zip** - `AorusLcd-<version>-win-x64-self-contained.zip` (no
+  prerequisites) or the smaller framework-dependent zip (needs the .NET 10
+  runtime). Extract and run `AorusLcd.Gui.exe`.
+
+The optional live sensor dashboard needs the background service; install it once
+from the app's **Device** tab (one UAC prompt).
+
 ## GUI
 
 `AorusLcd.Gui` is an [Avalonia](https://avaloniaui.net) desktop app (Windows /
@@ -156,23 +171,40 @@ sensor frame.
 
 ### Building a distributable
 
-Publish the service first so the GUI can bundle it for the in-app installer
-(NativeAOT needs an MSVC toolchain / `vcvars64`):
+Publish the service first, then the GUI, and bundle the service exe next to the
+GUI (NativeAOT needs an MSVC toolchain / `vcvars64`):
 
 ```powershell
 # NativeAOT background service (~5 MB self-contained native exe)
-dotnet publish src\AorusLcd.Service -c Release -r win-x64
+dotnet publish src\AorusLcd.Service -c Release -r win-x64 -o publish\service
 
-# GUI - self-contained single exe (~106 MB, no prerequisites);
-# picks up the published service exe next to it automatically
-dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --self-contained ^
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
-  -p:DebugType=none
+# GUI - self-contained single exe (~106 MB, no prerequisites)
+dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --self-contained `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+  -p:DebugType=none -o publish\self-contained
+
+# bundle the service next to the GUI so the app (and installer) can find it
+Copy-Item publish\service\AorusLcd.Service.exe publish\self-contained\
 
 # framework-dependent (~30 MB, needs the .NET 10 runtime)
-dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --no-self-contained ^
-  -p:PublishSingleFile=true -p:DebugType=none
+dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --no-self-contained `
+  -p:PublishSingleFile=true -p:DebugType=none -o publish\framework-dependent
 ```
+
+To build the Windows **installer** (`setup.exe`), compile the
+[Inno Setup](https://jrsoftware.org/isinfo.php) script against the
+`publish\self-contained\` output produced above - it packages the GUI and the
+bundled service, adds a Start Menu shortcut and an Add/Remove Programs entry, and
+removes the background service on uninstall:
+
+```powershell
+iscc /DMyAppVersion=1.0.0 installer\AorusLcd.iss
+# -> installer\output\AorusLcd-1.0.0-setup.exe
+```
+
+Tagged releases build all of the above automatically (see
+[`.github/workflows/release.yml`](.github/workflows/release.yml)) and attach the
+`setup.exe` plus both zips to the GitHub Release.
 
 ## How it works
 

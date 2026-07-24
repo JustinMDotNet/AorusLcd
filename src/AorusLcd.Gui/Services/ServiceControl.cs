@@ -79,11 +79,19 @@ public sealed class ServiceControl
         string dir = Path.GetDirectoryName(InstalledExePath)!;
         string dataDir = Path.GetDirectoryName(dir)!; // %ProgramData%\AorusLcd
         // Elevated batch chains critical steps with &&; mkdir may already exist, so it uses & and failures still surface.
-        // SECURITY: Users get Modify only on direct ProgramData files (feed.json), not inherited into bin\ with the LocalSystem service exe.
+        // SECURITY: the LocalSystem service exe lives in bin\, so users must not be
+        // able to overwrite it or delete bin\. Grant Users create-file+write on the
+        // data dir itself (RX,W - no Delete/Delete-child, so bin\ can't be removed)
+        // and Modify inherit-only + no-propagate on files, so only files directly in
+        // the dir (feed.json/service.log) are user-writable - never bin\ or its exe.
+        // Verified via icacls: bin\AorusLcd.Service.exe gets no Users ACE.
+        string userSid = "*S-1-5-32-545";
         string batch =
             $"mkdir \"{dir}\" 2>nul & copy /y \"{source}\" \"{InstalledExePath}\" && " +
-            $"icacls \"{dataDir}\" /grant *S-1-5-32-545:(OI)(NP)M && " +
+            $"icacls \"{dataDir}\" /grant \"{userSid}:(RX,W)\" /grant \"{userSid}:(OI)(NP)(IO)M\" && " +
             $"sc create {ServiceName} binPath= \"{InstalledExePath}\" start= auto DisplayName= \"AorusLcd Sensor Feed\" && " +
+            $"sc description {ServiceName} \"Pushes live GPU sensor data (temp, clocks, usage, fan, TGP) to the Aorus LCD Edge View dashboard for AorusLcd. Safe to stop if you do not use the live dashboard.\" && " +
+            $"sc failure {ServiceName} reset= 86400 actions= restart/5000/restart/10000/restart/60000 && " +
             $"sc start {ServiceName}";
         return RunElevatedCmdAsync(batch);
     }

@@ -28,26 +28,50 @@ jobs:
       - name: Setup MSVC (NativeAOT linker)
         uses: ilammy/msvc-dev-cmd@v1.13.0
 
-      # Publish the service first (default output path) so the GUI project picks
-      # it up next to its own output for the in-app installer (see GUI .csproj).
+      # Strip the leading 'v' from the tag so it stamps a clean assembly/installer version.
+      - name: Compute version
+        id: ver
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       - name: Publish background service (NativeAOT, win-x64)
-        run: dotnet publish src/AorusLcd.Service -c Release -r win-x64
+        run: dotnet publish src/AorusLcd.Service -c Release -r win-x64 -p:Version=${{ steps.ver.outputs.version }} -o publish/service
 
       - name: Publish GUI (self-contained single file, win-x64)
         run: >
           dotnet publish src/AorusLcd.Gui -c Release -r win-x64 --self-contained
           -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:DebugType=none -o publish/self-contained
+          -p:DebugType=none -p:Version=${{ steps.ver.outputs.version }} -o publish/self-contained
 
       - name: Publish GUI (framework-dependent single file, win-x64)
         run: >
           dotnet publish src/AorusLcd.Gui -c Release -r win-x64 --no-self-contained
-          -p:PublishSingleFile=true -p:DebugType=none -o publish/framework-dependent
+          -p:PublishSingleFile=true -p:DebugType=none
+          -p:Version=${{ steps.ver.outputs.version }} -o publish/framework-dependent
 
-      - name: Package artifacts
+      # Bundle the service exe next to the GUI (deterministic - independent of the
+      # csproj auto-copy) and drop native-package PDBs (incl. runtimes/ subdirs).
+      - name: Bundle service + trim symbols
         shell: pwsh
         run: |
-          $v = "${{ github.ref_name }}"
+          foreach ($dir in "publish/self-contained", "publish/framework-dependent") {
+            Copy-Item "publish/service/AorusLcd.Service.exe" "$dir/AorusLcd.Service.exe" -Force
+            Get-ChildItem $dir -Recurse -Filter *.pdb | Remove-Item -Force
+          }
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DMyAppVersion=${{ steps.ver.outputs.version }}" installer/AorusLcd.iss
+
+      - name: Package zip artifacts
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
           Compress-Archive -Path "publish/self-contained/*" `
             -DestinationPath "AorusLcd-$v-win-x64-self-contained.zip"
           Compress-Archive -Path "publish/framework-dependent/*" `
@@ -57,6 +81,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: |
+            installer/output/AorusLcd-*-setup.exe
             AorusLcd-*-win-x64-self-contained.zip
             AorusLcd-*-win-x64-framework-dependent.zip
           generate_release_notes: true
