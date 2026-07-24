@@ -816,7 +816,6 @@ public partial class MainViewModel : ViewModelBase
         // The color-bank effects blend several colours; single-colour effects
         // just use the first.
         RgbColor[] colors = IsMultiColorMode ? CollectRgbColors() : [color];
-        PersistRgbSettings();
         return RunAsync("Applying RGB…", async () =>
         {
             if (mode == "Static")
@@ -827,6 +826,7 @@ public partial class MainViewModel : ViewModelBase
             {
                 await _hw.SetRgbEffectAsync(MapRgbMode(mode), colors, speed, brightness);
             }
+            PersistRgbSettings();
             string colorText = IsMultiColorMode ? $"{colors.Length} colors" : $"#{PrimaryHex}";
             return $"RGB: {mode} {colorText} brightness {RgbBrightness}%.";
         });
@@ -871,7 +871,6 @@ public partial class MainViewModel : ViewModelBase
         byte speed = (byte)Math.Clamp(RgbSpeed + 1,
             RgbFusion2Blackwell.SpeedSlowest, RgbFusion2Blackwell.SpeedFastest);
         RgbColor[] colors = IsBlackwellMultiColorMode ? CollectRgbColors() : [color];
-        PersistRgbSettings();
         return RunAsync("Applying RGB…", async () =>
         {
             if (mode == RgbBlackwellMode.Static)
@@ -882,6 +881,7 @@ public partial class MainViewModel : ViewModelBase
             {
                 await _hw.SetRgbBlackwellEffectAsync(mode, colors, speed, brightness);
             }
+            PersistRgbSettings();
             string colorText = IsBlackwellMultiColorMode ? $"{colors.Length} colors" : $"#{PrimaryHex}";
             return $"RGB: {modeName} {colorText} brightness {RgbBrightness}%.";
         });
