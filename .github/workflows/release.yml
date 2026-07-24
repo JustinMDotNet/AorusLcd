@@ -32,7 +32,9 @@ jobs:
       - name: Compute version
         id: ver
         shell: pwsh
-        run: '"version=$("${{ github.ref_name }}" -replace ''^v'','''')" >> $env:GITHUB_OUTPUT'
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Publish background service (NativeAOT, win-x64)
         run: dotnet publish src/AorusLcd.Service -c Release -r win-x64 -p:Version=${{ steps.ver.outputs.version }} -o publish/service
@@ -69,7 +71,7 @@ jobs:
       - name: Package zip artifacts
         shell: pwsh
         run: |
-          $v = "${{ github.ref_name }}"
+          $v = "${{ steps.ver.outputs.version }}"
           Compress-Archive -Path "publish/self-contained/*" `
             -DestinationPath "AorusLcd-$v-win-x64-self-contained.zip"
           Compress-Archive -Path "publish/framework-dependent/*" `
