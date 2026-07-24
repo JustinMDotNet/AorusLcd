@@ -123,6 +123,21 @@ recovered `GvLcdApi` command set is implemented.
 - **Linux hardware backend** - the UI and imaging are already cross-platform; an
   i2c-dev transport is planned to match the reference tool.
 
+## Install
+
+Grab the latest [release](https://github.com/JustinMDotNet/AorusLcd/releases) and
+either:
+
+- **Installer (recommended)** - run `AorusLcd-<version>-setup.exe`. It installs to
+  Program Files, adds a Start Menu shortcut, and registers an Add/Remove Programs
+  entry (which also removes the background service on uninstall).
+- **Portable zip** - `AorusLcd-<version>-win-x64-self-contained.zip` (no
+  prerequisites) or the smaller framework-dependent zip (needs the .NET 10
+  runtime). Extract and run `AorusLcd.Gui.exe`.
+
+The optional live sensor dashboard needs the background service; install it once
+from the app's **Device** tab (one UAC prompt).
+
 ## GUI
 
 `AorusLcd.Gui` is an [Avalonia](https://avaloniaui.net) desktop app (Windows /
@@ -173,6 +188,21 @@ dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --self-contained ^
 dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --no-self-contained ^
   -p:PublishSingleFile=true -p:DebugType=none
 ```
+
+To build the Windows **installer** (`setup.exe`), publish the self-contained GUI
+to `publish\self-contained\` (as above), then compile the
+[Inno Setup](https://jrsoftware.org/isinfo.php) script - it packages the GUI and
+the bundled service, adds a Start Menu shortcut and an Add/Remove Programs entry,
+and removes the background service on uninstall:
+
+```powershell
+iscc /DMyAppVersion=1.0.0 installer\AorusLcd.iss
+# -> installer\output\AorusLcd-1.0.0-setup.exe
+```
+
+Tagged releases build all of the above automatically (see
+[`.github/workflows/release.yml`](.github/workflows/release.yml)) and attach the
+`setup.exe` plus both zips to the GitHub Release.
 
 ## How it works
 

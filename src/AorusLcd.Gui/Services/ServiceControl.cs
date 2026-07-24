@@ -84,6 +84,8 @@ public sealed class ServiceControl
             $"mkdir \"{dir}\" 2>nul & copy /y \"{source}\" \"{InstalledExePath}\" && " +
             $"icacls \"{dataDir}\" /grant *S-1-5-32-545:(OI)(NP)M && " +
             $"sc create {ServiceName} binPath= \"{InstalledExePath}\" start= auto DisplayName= \"AorusLcd Sensor Feed\" && " +
+            $"sc description {ServiceName} \"Pushes live GPU sensor data (temp, clocks, usage, fan, TGP) to the Aorus LCD Edge View dashboard for AorusLcd. Safe to stop if you do not use the live dashboard.\" && " +
+            $"sc failure {ServiceName} reset= 86400 actions= restart/5000/restart/10000/restart/60000 && " +
             $"sc start {ServiceName}";
         return RunElevatedCmdAsync(batch);
     }
