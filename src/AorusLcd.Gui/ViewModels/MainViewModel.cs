@@ -20,6 +20,7 @@ public partial class MainViewModel : ViewModelBase
 {
     private readonly HardwareService _hw = new();
     private readonly ServiceControl _service = new();
+    private readonly UiSettings _uiSettings = UiSettings.Load();
 
     /// <summary>Set by the view to present a file picker (needs a TopLevel).</summary>
     public Func<Task<string?>>? ImagePicker { get; set; }
@@ -33,6 +34,7 @@ public partial class MainViewModel : ViewModelBase
             "Color Cycle", "Wave", "Gradient", "Color Shift", "Dazzle"];
         SelectedRgbBlackwellMode = RgbBlackwellModes[0];
         StartWithWindows = StartupService.IsEnabled(); // reflect current registry state
+        ShowTrayIcon = _uiSettings.ShowTrayIcon;
         RefreshServiceState();
         StatusMessage = _hw.IsSupportedPlatform
             ? "Ready. Click Refresh to connect to the panel."
@@ -76,6 +78,19 @@ public partial class MainViewModel : ViewModelBase
             StartupService.SetEnabled(value);
             StatusMessage = value ? "AorusLcd will start with Windows." : "Autostart disabled.";
         }
+    }
+
+    /// <summary>Whether the system-tray icon is shown. Unchecking runs the app "service-only": closing the window exits the GUI.</summary>
+    [ObservableProperty]
+    public partial bool ShowTrayIcon { get; set; } = true;
+
+    partial void OnShowTrayIconChanged(bool value)
+    {
+        _uiSettings.ShowTrayIcon = value;
+        _uiSettings.Save();
+        StatusMessage = value
+            ? "Tray icon shown."
+            : "Tray icon hidden - closing the window now exits the app (the background service keeps running).";
     }
 
     // ---- image -------------------------------------------------------------

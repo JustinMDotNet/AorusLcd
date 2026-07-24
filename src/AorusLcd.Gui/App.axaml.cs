@@ -31,6 +31,8 @@ public partial class App : Application
             _viewModel = new MainViewModel();
             _window = new MainWindow { DataContext = _viewModel };
             _window.Closing += OnWindowClosing;
+            _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            ApplyTrayVisibility(_viewModel.ShowTrayIcon);
 
             // For --minimized autostart, initialize MainWindow for tray Show, then hide it immediately to avoid a flash.
             _startMinimized = desktop.Args?.Contains(StartupService.MinimizedArg) == true;
@@ -58,17 +60,45 @@ public partial class App : Application
 
     private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
     {
-        // Closing the window hides it to the tray instead of quitting.
-        if (!_exiting)
+        if (_exiting)
         {
-            e.Cancel = true;
+            return;
+        }
+        // With a tray icon, closing hides to the tray. Without one there is no way
+        // to restore the window, so closing exits the GUI (the service keeps running).
+        e.Cancel = true;
+        if (_viewModel?.ShowTrayIcon != false)
+        {
             _window?.Hide();
+        }
+        else
+        {
+            _ = ExitAsync();
+        }
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.ShowTrayIcon) && _viewModel is not null)
+        {
+            ApplyTrayVisibility(_viewModel.ShowTrayIcon);
+        }
+    }
+
+    private void ApplyTrayVisibility(bool show)
+    {
+        var icons = TrayIcon.GetIcons(this);
+        if (icons is { Count: > 0 })
+        {
+            icons[0].IsVisible = show;
         }
     }
 
     private void OnTrayShow(object? sender, EventArgs e) => ShowWindow();
 
-    private async void OnTrayExit(object? sender, EventArgs e)
+    private async void OnTrayExit(object? sender, EventArgs e) => await ExitAsync();
+
+    private async System.Threading.Tasks.Task ExitAsync()
     {
         _exiting = true;
         if (_viewModel is not null)
