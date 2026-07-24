@@ -171,29 +171,31 @@ sensor frame.
 
 ### Building a distributable
 
-Publish the service first so the GUI can bundle it for the in-app installer
-(NativeAOT needs an MSVC toolchain / `vcvars64`):
+Publish the service first, then the GUI, and bundle the service exe next to the
+GUI (NativeAOT needs an MSVC toolchain / `vcvars64`):
 
 ```powershell
 # NativeAOT background service (~5 MB self-contained native exe)
-dotnet publish src\AorusLcd.Service -c Release -r win-x64
+dotnet publish src\AorusLcd.Service -c Release -r win-x64 -o publish\service
 
-# GUI - self-contained single exe (~106 MB, no prerequisites);
-# picks up the published service exe next to it automatically
+# GUI - self-contained single exe (~106 MB, no prerequisites)
 dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --self-contained ^
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
-  -p:DebugType=none
+  -p:DebugType=none -o publish\self-contained
+
+# bundle the service next to the GUI so the app (and installer) can find it
+copy publish\service\AorusLcd.Service.exe publish\self-contained\
 
 # framework-dependent (~30 MB, needs the .NET 10 runtime)
 dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --no-self-contained ^
-  -p:PublishSingleFile=true -p:DebugType=none
+  -p:PublishSingleFile=true -p:DebugType=none -o publish\framework-dependent
 ```
 
-To build the Windows **installer** (`setup.exe`), publish the self-contained GUI
-to `publish\self-contained\` (as above), then compile the
-[Inno Setup](https://jrsoftware.org/isinfo.php) script - it packages the GUI and
-the bundled service, adds a Start Menu shortcut and an Add/Remove Programs entry,
-and removes the background service on uninstall:
+To build the Windows **installer** (`setup.exe`), compile the
+[Inno Setup](https://jrsoftware.org/isinfo.php) script against the
+`publish\self-contained\` output produced above - it packages the GUI and the
+bundled service, adds a Start Menu shortcut and an Add/Remove Programs entry, and
+removes the background service on uninstall:
 
 ```powershell
 iscc /DMyAppVersion=1.0.0 installer\AorusLcd.iss

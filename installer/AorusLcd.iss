@@ -61,9 +61,10 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-; Stop and remove the background service (if the user installed it) so uninstall is clean.
-Filename: "{sys}\sc.exe"; Parameters: "stop {#MyServiceName}"; Flags: runhidden; RunOnceId: "StopAorusLcdFeed"
-Filename: "{sys}\sc.exe"; Parameters: "delete {#MyServiceName}"; Flags: runhidden; RunOnceId: "DeleteAorusLcdFeed"
+; Stop and remove the background service if present. Run via cmd with `& exit 0`
+; so a missing service (non-zero sc exit) never triggers an Inno error prompt.
+Filename: "{cmd}"; Parameters: "/c ""sc stop {#MyServiceName} & exit 0"""; Flags: runhidden; RunOnceId: "StopAorusLcdFeed"
+Filename: "{cmd}"; Parameters: "/c ""sc delete {#MyServiceName} & exit 0"""; Flags: runhidden; RunOnceId: "DeleteAorusLcdFeed"
 
 [UninstallDelete]
 ; Remove the machine-wide files the app created outside {app}: the installed
