@@ -265,8 +265,10 @@ public partial class MainViewModel : ViewModelBase
             var (_, _, kind) = await _hw.ConnectRgbAsync();
             return kind;
         }
-        catch (Exception)
+        catch (Exception e) when (e is HardwareUnavailableException or NvApiException)
         {
+            // RGB not reachable (no controller, or not on Windows): fall back to
+            // the name-classified generation. Unexpected exceptions still surface.
             return _hw.RgbKind ?? RgbLocator.ClassifyByName(gpuName);
         }
     }

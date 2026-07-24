@@ -308,8 +308,10 @@ Code: `Rgb/RgbFusion2.cs`, `Rgb/RgbFusion2Controller.cs`, `Rgb/RgbColor.cs`.
 RTX 50-series Aorus cards (e.g. the **RTX 5090 Master**, SSID `1458:416E`) answer
 at **`0x75`** with a newer **64-byte** protocol (from OpenRGB's
 `GigabyteRGBFusion2BlackwellGPUController`), not the legacy 8-byte one above. GCC
-itself uses this protocol on these cards. The tool selects it by **GPU
-generation** (name), keeping the legacy protocol for pre-Blackwell cards.
+itself uses this protocol on these cards. Detection probes both addresses and
+uses whichever controller ACKs; the **GPU name** only picks which to try first
+(0x75/Blackwell for RTX 50-series, else 0x71/legacy), so a card whose name and
+hardware disagree still gets the protocol it actually answers.
 
 64-byte packet layout (byte 0 = register):
 

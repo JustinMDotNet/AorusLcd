@@ -195,7 +195,8 @@ raw block writes (no register address) - the same path OpenRGB uses.
 - Upload: `F2(BEGIN)` → `F1` header → 256-byte chunks → `F2(END)`, then `E5` SetMode.
 - RGB: RTX 50-series (Blackwell) cards use 64-byte packets (`0x12`/`0x16`, save
   `0x13`); older cards use 8-byte packets (mode `0x88`, color `0x40`/`0xB0`/`0xB1`,
-  save `0xAA`) across 5 zones. The protocol is chosen by GPU generation.
+  save `0xAA`) across 5 zones. The GPU name picks which protocol to probe first;
+  detection then uses whichever controller actually responds.
 
 Before any write, the tool sends the `EB 03` status query and requires a
 read-back, so it never writes to a bus that does not answer.
