@@ -70,15 +70,17 @@ public partial class App : Application
         {
             return;
         }
-        // With a tray icon, closing hides to the tray. Without one there is no way
-        // to restore the window, so closing exits the GUI (the service keeps running).
-        e.Cancel = true;
         if (_viewModel?.ShowTrayIcon != false)
         {
+            // With a tray icon, closing hides to the tray instead of quitting.
+            e.Cancel = true;
             _window?.Hide();
         }
         else
         {
+            // No tray to restore from: let the window close immediately (so the
+            // button feels responsive) and finish shutting down in the background
+            // (ExitAsync waits for any in-flight upload, then exits the app).
             _ = ExitAsync();
         }
     }
