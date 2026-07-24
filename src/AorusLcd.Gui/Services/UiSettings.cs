@@ -40,7 +40,11 @@ public sealed class UiSettings
         path ??= DefaultPath;
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
             File.WriteAllText(path, JsonSerializer.Serialize(this, UiSettingsJson.Default.UiSettings));
         }
         catch (Exception)

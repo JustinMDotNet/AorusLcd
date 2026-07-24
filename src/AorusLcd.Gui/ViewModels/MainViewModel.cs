@@ -86,6 +86,10 @@ public partial class MainViewModel : ViewModelBase
 
     partial void OnShowTrayIconChanged(bool value)
     {
+        if (_uiSettings.ShowTrayIcon == value)
+        {
+            return; // no-op on the constructor's initial sync; avoids a redundant disk write
+        }
         _uiSettings.ShowTrayIcon = value;
         _uiSettings.Save();
         StatusMessage = value
