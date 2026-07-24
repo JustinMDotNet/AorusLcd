@@ -179,15 +179,15 @@ GUI (NativeAOT needs an MSVC toolchain / `vcvars64`):
 dotnet publish src\AorusLcd.Service -c Release -r win-x64 -o publish\service
 
 # GUI - self-contained single exe (~106 MB, no prerequisites)
-dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --self-contained ^
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
+dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --self-contained `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
   -p:DebugType=none -o publish\self-contained
 
 # bundle the service next to the GUI so the app (and installer) can find it
-copy publish\service\AorusLcd.Service.exe publish\self-contained\
+Copy-Item publish\service\AorusLcd.Service.exe publish\self-contained\
 
 # framework-dependent (~30 MB, needs the .NET 10 runtime)
-dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --no-self-contained ^
+dotnet publish src\AorusLcd.Gui -c Release -r win-x64 --no-self-contained `
   -p:PublishSingleFile=true -p:DebugType=none -o publish\framework-dependent
 ```
 
