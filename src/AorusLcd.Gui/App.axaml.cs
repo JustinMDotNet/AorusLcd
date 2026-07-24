@@ -31,14 +31,22 @@ public partial class App : Application
             _viewModel = new MainViewModel();
             _window = new MainWindow { DataContext = _viewModel };
             _window.Closing += OnWindowClosing;
+            _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            ApplyTrayVisibility(_viewModel.ShowTrayIcon);
 
             // For --minimized autostart, initialize MainWindow for tray Show, then hide it immediately to avoid a flash.
             _startMinimized = desktop.Args?.Contains(StartupService.MinimizedArg) == true;
             if (_startMinimized)
             {
                 _window.WindowState = WindowState.Minimized;
-                _window.ShowInTaskbar = false;
-                _window.Opened += OnFirstOpenHideToTray;
+                // Only vanish to the tray if there is a tray icon to restore from;
+                // with the tray disabled, stay in the taskbar so the minimized
+                // window remains recoverable instead of being lost.
+                if (_viewModel.ShowTrayIcon)
+                {
+                    _window.ShowInTaskbar = false;
+                    _window.Opened += OnFirstOpenHideToTray;
+                }
             }
             desktop.MainWindow = _window;
         }
@@ -58,17 +66,47 @@ public partial class App : Application
 
     private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
     {
-        // Closing the window hides it to the tray instead of quitting.
-        if (!_exiting)
+        if (_exiting)
         {
+            return;
+        }
+        if (_viewModel?.ShowTrayIcon != false)
+        {
+            // With a tray icon, closing hides to the tray instead of quitting.
             e.Cancel = true;
             _window?.Hide();
+        }
+        else
+        {
+            // No tray to restore from: let the window close immediately (so the
+            // button feels responsive) and finish shutting down in the background
+            // (ExitAsync waits for any in-flight upload, then exits the app).
+            _ = ExitAsync();
+        }
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.ShowTrayIcon) && _viewModel is not null)
+        {
+            ApplyTrayVisibility(_viewModel.ShowTrayIcon);
+        }
+    }
+
+    private void ApplyTrayVisibility(bool show)
+    {
+        var icons = TrayIcon.GetIcons(this);
+        if (icons is { Count: > 0 })
+        {
+            icons[0].IsVisible = show;
         }
     }
 
     private void OnTrayShow(object? sender, EventArgs e) => ShowWindow();
 
-    private async void OnTrayExit(object? sender, EventArgs e)
+    private async void OnTrayExit(object? sender, EventArgs e) => await ExitAsync();
+
+    private async System.Threading.Tasks.Task ExitAsync()
     {
         _exiting = true;
         if (_viewModel is not null)
