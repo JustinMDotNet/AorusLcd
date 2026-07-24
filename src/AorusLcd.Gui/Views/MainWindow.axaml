@@ -98,32 +98,11 @@
                                            Text="When the tray icon is shown, closing the window hides it to the tray. When it is off (service-only), closing the window exits the app; the background service keeps updating the dashboard either way." />
                             </StackPanel>
                         </Border>
-                        <Border Classes="card" IsVisible="{Binding ServiceSupported}">
-                            <StackPanel>
-                                <TextBlock Classes="h2" Text="Background service" />
-                                <TextBlock Classes="label" TextWrapping="Wrap"
-                                           Text="A lightweight Windows service drives the sensor dashboard so the panel keeps updating after this app is closed. It is required for the live sensor feed." />
-                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
-                                    <TextBlock Classes="label" Text="Status:" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding ServiceStatusText}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,10,0,0">
-                                    <Button Content="Install" Command="{Binding InstallServiceCommand}"
-                                            IsVisible="{Binding !ServiceInstalled}" IsEnabled="{Binding IsNotBusy}" />
-                                    <Button Content="Start" Command="{Binding StartServiceCommand}"
-                                            IsVisible="{Binding ServiceInstalled}" IsEnabled="{Binding !ServiceRunning}" />
-                                    <Button Content="Stop" Command="{Binding StopServiceCommand}"
-                                            IsVisible="{Binding ServiceInstalled}" IsEnabled="{Binding ServiceRunning}" />
-                                    <Button Content="Uninstall" Command="{Binding UninstallServiceCommand}"
-                                            IsVisible="{Binding ServiceInstalled}" IsEnabled="{Binding IsNotBusy}" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
                         <Border Classes="card">
                             <StackPanel>
                                 <TextBlock Classes="h2" Text="About" />
                                 <TextBlock Classes="label" TextWrapping="Wrap"
-                                           Text="AorusLcd - open-source control for the Aorus Master LCD Edge View and RGB Fusion 2 lighting. Click Refresh (top-right) to connect. Closing the window minimizes to the system tray; the sensor feed keeps running in the background." />
+                                           Text="AorusLcd - open-source control for the Aorus Master LCD Edge View and RGB Fusion 2 lighting. It connects automatically on launch (use Refresh, top-right, to reconnect). Closing the window minimizes to the system tray; the sensor feed keeps running in the background." />
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -148,31 +127,65 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Image -->
+                <!-- Content selector: the panel shows exactly one of these at a time -->
                 <Border Classes="card">
                     <StackPanel>
+                        <TextBlock Classes="h2" Text="What to display" />
+                        <TextBlock Classes="label" FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap"
+                                   Text="The panel shows one thing at a time - pick a content type, set it up below, and send it." />
+                        <WrapPanel>
+                            <RadioButton GroupName="lcdContent" Content="🖼 Image" Width="150"
+                                         IsChecked="{Binding SelectedLcdContent, Mode=TwoWay, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=Image}" />
+                            <RadioButton GroupName="lcdContent" Content="🔤 Text" Width="150"
+                                         IsChecked="{Binding SelectedLcdContent, Mode=TwoWay, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=Text}" />
+                            <RadioButton GroupName="lcdContent" Content="🎞 Animated GIF" Width="150"
+                                         IsChecked="{Binding SelectedLcdContent, Mode=TwoWay, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=Gif}" />
+                            <RadioButton GroupName="lcdContent" Content="✨ Built-in Screen" Width="150"
+                                         IsChecked="{Binding SelectedLcdContent, Mode=TwoWay, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=BuiltIn}" />
+                            <RadioButton GroupName="lcdContent" Content="🔁 Carousel" Width="150"
+                                         IsChecked="{Binding SelectedLcdContent, Mode=TwoWay, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=Carousel}" />
+                            <RadioButton GroupName="lcdContent" Content="📊 Sensor Dashboard" Width="150"
+                                         IsChecked="{Binding SelectedLcdContent, Mode=TwoWay, Converter={x:Static conv:StringEqualityConverter.Instance}, ConverterParameter=Sensors}" />
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Live preview of the 320x170 panel content -->
+                <Border Classes="card">
+                    <StackPanel>
+                        <TextBlock Classes="h2" Text="Panel Preview" />
+                        <Border Width="320" Height="170" Background="#000000" CornerRadius="6"
+                                ClipToBounds="True" HorizontalAlignment="Left">
+                            <Panel>
+                                <Image Source="{Binding PreviewImage}" Stretch="Uniform" IsVisible="{Binding HasPreview}" />
+                                <TextBlock Text="{Binding PreviewCaption}" Foreground="#8A8A94" FontSize="12"
+                                           TextWrapping="Wrap" TextAlignment="Center" Margin="16"
+                                           VerticalAlignment="Center" HorizontalAlignment="Center"
+                                           IsVisible="{Binding !HasPreview}" />
+                            </Panel>
+                        </Border>
+                        <TextBlock Classes="label" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap"
+                                   Text="{Binding PreviewCaption}" IsVisible="{Binding HasPreview}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Image -->
+                <Border Classes="card" IsVisible="{Binding IsImageContent}">
+                    <StackPanel Spacing="10">
                         <TextBlock Classes="h2" Text="Custom Image" />
-                        <Grid ColumnDefinitions="Auto,*">
-                            <Border Grid.Column="0" Width="320" Height="170" Background="#000000"
-                                    CornerRadius="6" ClipToBounds="True">
-                                <Image Source="{Binding PreviewImage}" Stretch="UniformToFill" />
-                            </Border>
-                            <StackPanel Grid.Column="1" Margin="16,0,0,0" Spacing="10" VerticalAlignment="Center">
-                                <Button Content="📂 Choose image…" Command="{Binding BrowseImageCommand}" HorizontalAlignment="Stretch" IsEnabled="{Binding IsNotBusy}" />
-                                <TextBlock Classes="label" Text="{Binding ImagePath}" TextWrapping="Wrap" FontSize="11" />
-                                <CheckBox Content="Hide sensor overlay (clean image)" IsChecked="{Binding ClearSensorsOnSend}" />
-                                <CheckBox Content="Save to panel (survives reboot)" IsChecked="{Binding SaveOnSend}" />
-                                <Button Content="⬆ Send to LCD" Command="{Binding SendImageCommand}"
-                                        Background="#FF7A18" Foreground="White" HorizontalAlignment="Stretch" IsEnabled="{Binding IsNotBusy}" />
-                            </StackPanel>
-                        </Grid>
-                        <TextBlock Classes="label" FontSize="11" Margin="0,10,0,0"
+                        <Button Content="📂 Choose image…" Command="{Binding BrowseImageCommand}" HorizontalAlignment="Left" IsEnabled="{Binding IsNotBusy}" />
+                        <TextBlock Classes="label" Text="{Binding ImagePath}" TextWrapping="Wrap" FontSize="11" />
+                        <CheckBox Content="Hide sensor overlay (clean image)" IsChecked="{Binding ClearSensorsOnSend}" />
+                        <CheckBox Content="Save to panel (survives reboot)" IsChecked="{Binding SaveOnSend}" />
+                        <Button Content="⬆ Send to LCD" Command="{Binding SendImageCommand}"
+                                Background="#FF7A18" Foreground="White" HorizontalAlignment="Left" IsEnabled="{Binding IsNotBusy}" />
+                        <TextBlock Classes="label" FontSize="11"
                                    Text="Image is resized to 320×170 and sent as the panel background." />
                     </StackPanel>
                 </Border>
 
                 <!-- Built-in modes -->
-                <Border Classes="card">
+                <Border Classes="card" IsVisible="{Binding IsBuiltInContent}">
                     <StackPanel>
                         <TextBlock Classes="h2" Text="Built-in Screens" />
                         <TextBlock Classes="label" FontSize="11" Margin="0,0,0,10"
@@ -196,7 +209,7 @@
                 </Border>
 
                 <!-- Text -->
-                <Border Classes="card">
+                <Border Classes="card" IsVisible="{Binding IsTextContent}">
                     <StackPanel>
                         <TextBlock Classes="h2" Text="Text" />
                         <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
@@ -225,7 +238,7 @@
                 </Border>
 
                 <!-- GIF -->
-                <Border Classes="card">
+                <Border Classes="card" IsVisible="{Binding IsGifContent}">
                     <StackPanel>
                         <TextBlock Classes="h2" Text="Animated GIF" />
                         <StackPanel Orientation="Horizontal" Spacing="10">
@@ -238,7 +251,7 @@
                 </Border>
 
                 <!-- Carousel -->
-                <Border Classes="card">
+                <Border Classes="card" IsVisible="{Binding IsCarouselContent}">
                     <StackPanel>
                         <TextBlock Classes="h2" Text="Carousel" />
                         <TextBlock Classes="label" FontSize="11" Margin="0,0,0,10"
@@ -259,11 +272,11 @@
                 </Border>
 
                 <!-- Sensors -->
-                <Border Classes="card">
+                <Border Classes="card" IsVisible="{Binding IsSensorContent}">
                     <StackPanel>
                         <TextBlock Classes="h2" Text="Sensor Dashboard" />
                         <TextBlock Classes="label" FontSize="11" Margin="0,0,0,10"
-                                   Text="The panel's built-in overlay. Check the widgets to rotate; uncheck all for a clean image." />
+                                   Text="The panel's built-in overlay of live GPU widgets. Check the ones to rotate through; uncheck all for a clean panel." />
                         <WrapPanel>
                             <CheckBox Content="GPU Temp" IsChecked="{Binding ShowGpuTemp}" Width="150" />
                             <CheckBox Content="GPU Clock" IsChecked="{Binding ShowGpuClock}" Width="150" />
@@ -280,6 +293,30 @@
                             <Button Content="Apply sensors" Command="{Binding ApplySensorsCommand}" IsEnabled="{Binding IsNotBusy}" />
                             <Button Content="Sensors off" Command="{Binding SensorsOffCommand}" IsEnabled="{Binding IsNotBusy}" />
                         </StackPanel>
+
+                        <!-- Background service: only shown here, and only once a live widget is selected -->
+                        <Border Background="#15151A" CornerRadius="8" Padding="14" Margin="0,14,0,0"
+                                IsVisible="{Binding ShowServiceForSensors}">
+                            <StackPanel>
+                                <TextBlock Text="Background service" FontWeight="SemiBold" Foreground="#FF7A18" Margin="0,0,0,6" />
+                                <TextBlock Classes="label" FontSize="11" TextWrapping="Wrap"
+                                           Text="Live widgets are pushed ~1×/second, so they only keep updating while a small background Windows service runs. Install it once and the dashboard stays live with this app closed." />
+                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                                    <TextBlock Classes="label" Text="Status:" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding ServiceStatusText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,10,0,0">
+                                    <Button Content="Install service" Command="{Binding InstallServiceCommand}"
+                                            IsVisible="{Binding !ServiceInstalled}" IsEnabled="{Binding IsNotBusy}" />
+                                    <Button Content="Start" Command="{Binding StartServiceCommand}"
+                                            IsVisible="{Binding ServiceInstalled}" IsEnabled="{Binding !ServiceRunning}" />
+                                    <Button Content="Stop" Command="{Binding StopServiceCommand}"
+                                            IsVisible="{Binding ServiceInstalled}" IsEnabled="{Binding ServiceRunning}" />
+                                    <Button Content="Uninstall" Command="{Binding UninstallServiceCommand}"
+                                            IsVisible="{Binding ServiceInstalled}" IsEnabled="{Binding IsNotBusy}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </Border>
 
@@ -299,16 +336,29 @@
                             <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding RgbModes}"
                                       SelectedItem="{Binding SelectedRgbMode}" HorizontalAlignment="Left" Width="200" Margin="0,0,0,8" />
 
-                            <TextBlock Classes="label" Grid.Row="1" Grid.Column="0" Text="Color (RRGGBB)" Margin="0,0,12,8" />
-                            <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
-                                <TextBox Text="{Binding RgbColorHex}" Width="120" />
-                                <ColorPicker Color="{Binding RgbColorHex, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
-                                             IsAlphaEnabled="False" VerticalAlignment="Center" />
-                                <TextBlock Classes="label" Text="+" VerticalAlignment="Center" IsVisible="{Binding IsMultiColorMode}" />
-                                <ColorPicker Color="{Binding RgbColorHex2, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
-                                             IsAlphaEnabled="False" VerticalAlignment="Center" IsVisible="{Binding IsMultiColorMode}" />
-                                <ColorPicker Color="{Binding RgbColorHex3, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
-                                             IsAlphaEnabled="False" VerticalAlignment="Center" IsVisible="{Binding IsMultiColorMode}" />
+                            <TextBlock Classes="label" Grid.Row="1" Grid.Column="0" Text="Colors" Margin="0,0,12,8" />
+                            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="8" Margin="0,0,0,8">
+                                <Border Height="24" CornerRadius="4" Background="{Binding RgbPreviewBrush}" />
+                                <ItemsControl ItemsSource="{Binding RgbColorList}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,0,8,4">
+                                                <ColorPicker Color="{Binding Hex, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
+                                                             IsAlphaEnabled="False" VerticalAlignment="Center" />
+                                                <Button Content="✕" Padding="6,2" VerticalAlignment="Center"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.RemoveColorCommand}"
+                                                        CommandParameter="{Binding}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Content="+ Add color" HorizontalAlignment="Left"
+                                        Command="{Binding AddColorCommand}" IsVisible="{Binding IsAnyMultiColorMode}" />
                             </StackPanel>
 
                             <TextBlock Classes="label" Grid.Row="2" Grid.Column="0" Text="Brightness" Margin="0,0,12,8" />
@@ -348,16 +398,29 @@
                                     <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding RgbBlackwellModes}"
                                               SelectedItem="{Binding SelectedRgbBlackwellMode}" HorizontalAlignment="Left" Width="200" Margin="0,0,0,8" />
 
-                                    <TextBlock Classes="label" Grid.Row="1" Grid.Column="0" Text="Color (RRGGBB)" Margin="0,0,12,8" />
-                                    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
-                                        <TextBox Text="{Binding RgbColorHex}" Width="120" />
-                                        <ColorPicker Color="{Binding RgbColorHex, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
-                                                     IsAlphaEnabled="False" VerticalAlignment="Center" />
-                                        <TextBlock Classes="label" Text="+" VerticalAlignment="Center" IsVisible="{Binding IsBlackwellMultiColorMode}" />
-                                        <ColorPicker Color="{Binding RgbColorHex2, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
-                                                     IsAlphaEnabled="False" VerticalAlignment="Center" IsVisible="{Binding IsBlackwellMultiColorMode}" />
-                                        <ColorPicker Color="{Binding RgbColorHex3, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
-                                                     IsAlphaEnabled="False" VerticalAlignment="Center" IsVisible="{Binding IsBlackwellMultiColorMode}" />
+                                    <TextBlock Classes="label" Grid.Row="1" Grid.Column="0" Text="Colors" Margin="0,0,12,8" />
+                                    <StackPanel Grid.Row="1" Grid.Column="1" Spacing="8" Margin="0,0,0,8">
+                                        <Border Height="24" CornerRadius="4" Background="{Binding RgbPreviewBrush}" />
+                                        <ItemsControl ItemsSource="{Binding RgbColorList}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel Orientation="Horizontal" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,0,8,4">
+                                                        <ColorPicker Color="{Binding Hex, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
+                                                                     IsAlphaEnabled="False" VerticalAlignment="Center" />
+                                                        <Button Content="✕" Padding="6,2" VerticalAlignment="Center"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.RemoveColorCommand}"
+                                                                CommandParameter="{Binding}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <Button Content="+ Add color" HorizontalAlignment="Left"
+                                                Command="{Binding AddColorCommand}" IsVisible="{Binding IsAnyMultiColorMode}" />
                                     </StackPanel>
 
                                     <TextBlock Classes="label" Grid.Row="2" Grid.Column="0" Text="Brightness" Margin="0,0,12,8" />

@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Linq;
 using System.Threading.Tasks;
 using AorusLcd.Core;
 using AorusLcd.Core.Nvapi;
@@ -7,6 +11,7 @@ using AorusLcd.Core.Rgb;
 using AorusLcd.Core.Sensors;
 using AorusLcd.Gui.Models;
 using AorusLcd.Gui.Services;
+using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -33,13 +38,21 @@ public partial class MainViewModel : ViewModelBase
         RgbBlackwellModes = ["Static", "Direct", "Pulse", "Flash", "Double Flash",
             "Color Cycle", "Wave", "Gradient", "Color Shift", "Dazzle"];
         SelectedRgbBlackwellMode = RgbBlackwellModes[0];
+        RgbColorList.CollectionChanged += OnRgbColorListChanged;
+        RgbColorList[0].PropertyChanged += OnColorItemChanged;
+        RestoreRgbSettings();
         StartWithWindows = StartupService.IsEnabled(); // reflect current registry state
         ShowTrayIcon = _uiSettings.ShowTrayIcon;
         RefreshServiceState();
         StatusMessage = _hw.IsSupportedPlatform
-            ? "Ready. Click Refresh to connect to the panel."
+            ? "Connecting to the panel…"
             : "Hardware control needs Windows (NVAPI) for now; UI is cross-platform.";
+        UpdatePreview();
     }
+
+    /// <summary>Auto-connect to the panel on startup (Windows only) so the user doesn't have to click Refresh.</summary>
+    public Task AutoConnectAsync()
+        => _hw.IsSupportedPlatform ? RefreshStatusCommand.ExecuteAsync(null) : Task.CompletedTask;
 
     // ---- global ------------------------------------------------------------
 
@@ -102,8 +115,23 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial string? ImagePath { get; set; }
 
+    /// <summary>The 320x170 preview of what will actually be shown on the panel (image/text/GIF), or null for firmware-drawn content.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPreview))]
     public partial Bitmap? PreviewImage { get; set; }
+
+    /// <summary>True when a rendered bitmap preview is available (image/text/GIF); false shows the caption placeholder.</summary>
+    public bool HasPreview => PreviewImage is not null;
+
+    /// <summary>Caption under the preview, or the placeholder text for firmware-drawn content that can't be previewed.</summary>
+    [ObservableProperty]
+    public partial string? PreviewCaption { get; set; }
+
+    /// <summary>The decoded source image, kept to re-render the exact 320x170 preview when the mode changes.</summary>
+    private Bitmap? _imageSource;
+
+    /// <summary>The GIF's first frame, kept for the preview.</summary>
+    private Bitmap? _gifFirstFrame;
 
     [ObservableProperty]
     public partial bool ClearSensorsOnSend { get; set; } = true;
@@ -114,31 +142,51 @@ public partial class MainViewModel : ViewModelBase
     // ---- sensor dashboard --------------------------------------------------
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AnySensorSelected))]
+    [NotifyPropertyChangedFor(nameof(ShowServiceForSensors))]
     public partial bool ShowGpuTemp { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AnySensorSelected))]
+    [NotifyPropertyChangedFor(nameof(ShowServiceForSensors))]
     public partial bool ShowGpuClock { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AnySensorSelected))]
+    [NotifyPropertyChangedFor(nameof(ShowServiceForSensors))]
     public partial bool ShowGpuUsage { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AnySensorSelected))]
+    [NotifyPropertyChangedFor(nameof(ShowServiceForSensors))]
     public partial bool ShowFanSpeed { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AnySensorSelected))]
+    [NotifyPropertyChangedFor(nameof(ShowServiceForSensors))]
     public partial bool ShowRamClock { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AnySensorSelected))]
+    [NotifyPropertyChangedFor(nameof(ShowServiceForSensors))]
     public partial bool ShowRamUsage { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AnySensorSelected))]
+    [NotifyPropertyChangedFor(nameof(ShowServiceForSensors))]
     public partial bool ShowFps { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AnySensorSelected))]
+    [NotifyPropertyChangedFor(nameof(ShowServiceForSensors))]
     public partial bool ShowTgp { get; set; }
 
     [ObservableProperty]
     public partial int SensorInterval { get; set; } = 4;
+
+    /// <summary>True when at least one dashboard widget is selected (so the live feed - and its service - is needed).</summary>
+    public bool AnySensorSelected => ShowGpuTemp || ShowGpuClock || ShowGpuUsage || ShowFanSpeed
+        || ShowRamClock || ShowRamUsage || ShowFps || ShowTgp;
 
     // ---- background service -------------------------------------------------
 
@@ -153,6 +201,84 @@ public partial class MainViewModel : ViewModelBase
 
     /// <summary>True on platforms where the background service is available (Windows).</summary>
     public bool ServiceSupported => OperatingSystem.IsWindows();
+
+    /// <summary>Show the background-service controls only where they're needed: on Windows, once a live widget is selected.</summary>
+    public bool ShowServiceForSensors => ServiceSupported && AnySensorSelected;
+
+    // ---- LCD content selection --------------------------------------------
+
+    /// <summary>Content types the panel can show; the panel displays exactly one at a time.</summary>
+    public const string ContentImage = "Image";
+    public const string ContentBuiltIn = "BuiltIn";
+    public const string ContentText = "Text";
+    public const string ContentGif = "Gif";
+    public const string ContentCarousel = "Carousel";
+    public const string ContentSensors = "Sensors";
+
+    /// <summary>The currently selected panel content type (mutually exclusive - the panel shows one thing at a time).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsImageContent))]
+    [NotifyPropertyChangedFor(nameof(IsBuiltInContent))]
+    [NotifyPropertyChangedFor(nameof(IsTextContent))]
+    [NotifyPropertyChangedFor(nameof(IsGifContent))]
+    [NotifyPropertyChangedFor(nameof(IsCarouselContent))]
+    [NotifyPropertyChangedFor(nameof(IsSensorContent))]
+    public partial string SelectedLcdContent { get; set; } = ContentImage;
+
+    public bool IsImageContent => SelectedLcdContent == ContentImage;
+    public bool IsBuiltInContent => SelectedLcdContent == ContentBuiltIn;
+    public bool IsTextContent => SelectedLcdContent == ContentText;
+    public bool IsGifContent => SelectedLcdContent == ContentGif;
+    public bool IsCarouselContent => SelectedLcdContent == ContentCarousel;
+    public bool IsSensorContent => SelectedLcdContent == ContentSensors;
+
+    partial void OnSelectedLcdContentChanged(string value) => UpdatePreview();
+
+    /// <summary>Refresh the panel preview for the selected content: render image/text/GIF, or show a caption for firmware-drawn content.</summary>
+    private void UpdatePreview()
+    {
+        Bitmap? preview = null;
+        string? caption = null;
+        switch (SelectedLcdContent)
+        {
+            case ContentImage:
+                preview = _imageSource is not null ? PanelImage.Render320(_imageSource) : null;
+                caption = preview is null ? "Choose an image to preview it here." : "Exactly how the image will appear on the 320×170 panel.";
+                break;
+            case ContentText:
+                preview = string.IsNullOrEmpty(TextInput)
+                    ? null
+                    : PanelText.Render(TextInput, TextSize, SafeColor(TextColorHex, Colors.White), SafeColor(TextBgHex, Colors.Black));
+                caption = preview is null ? "Enter a message to preview it here." : "Live preview of the rendered text.";
+                break;
+            case ContentGif:
+                preview = _gifFirstFrame is not null ? PanelImage.Render320(_gifFirstFrame) : null;
+                caption = preview is null ? "Choose a GIF to preview its first frame." : "First frame shown; the panel plays the full animation.";
+                break;
+            case ContentBuiltIn:
+                caption = "Built-in animation - drawn by the panel firmware, so it can't be previewed here.";
+                break;
+            case ContentCarousel:
+                caption = "Carousel rotates through the selected screens on the panel.";
+                break;
+            case ContentSensors:
+                caption = "Live GPU dashboard - drawn by the panel from the sensor feed.";
+                break;
+        }
+        SetPreview(preview);
+        PreviewCaption = caption;
+    }
+
+    /// <summary>Swap the preview bitmap, disposing the previous render-target so previews don't leak.</summary>
+    private void SetPreview(Bitmap? next)
+    {
+        var old = PreviewImage;
+        PreviewImage = next;
+        if (!ReferenceEquals(old, next))
+        {
+            old?.Dispose();
+        }
+    }
 
     // ---- built-in modes / text / gif / carousel ----------------------------
 
@@ -175,6 +301,19 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial int TextSize { get; set; } = 40;
+
+    partial void OnTextInputChanged(string value) => UpdateTextPreview();
+    partial void OnTextColorHexChanged(string value) => UpdateTextPreview();
+    partial void OnTextBgHexChanged(string value) => UpdateTextPreview();
+    partial void OnTextSizeChanged(int value) => UpdateTextPreview();
+
+    private void UpdateTextPreview()
+    {
+        if (IsTextContent)
+        {
+            UpdatePreview();
+        }
+    }
 
     /// <summary>Apply the panel's built-in rainbow effect to text (matches GCC's default).</summary>
     [ObservableProperty]
@@ -212,18 +351,10 @@ public partial class MainViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsMultiColorMode))]
     public partial string SelectedRgbMode { get; set; }
 
-    [ObservableProperty]
-    public partial string RgbColorHex { get; set; } = "FF6600";
+    /// <summary>Editable ordered colour list; the first entry is the primary colour for single-colour effects.</summary>
+    public ObservableCollection<RgbColorItem> RgbColorList { get; } = [new RgbColorItem("FF6600")];
 
-    /// <summary>Second colour, used only by the multi-colour effects (Color Shift, Tricolor).</summary>
-    [ObservableProperty]
-    public partial string RgbColorHex2 { get; set; } = "0066FF";
-
-    /// <summary>Third colour, used only by the multi-colour effects (Color Shift, Tricolor).</summary>
-    [ObservableProperty]
-    public partial string RgbColorHex3 { get; set; } = "00FF66";
-
-    /// <summary>True for effects that blend multiple colours, so the extra pickers show.</summary>
+    /// <summary>True for effects that blend multiple colours, so the extra colour editor shows.</summary>
     public bool IsMultiColorMode => SelectedRgbMode is "Color Shift" or "Tricolor";
 
     [ObservableProperty]
@@ -238,6 +369,8 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowLegacyRgb))]
     [NotifyPropertyChangedFor(nameof(ShowBlackwellRgb))]
+    [NotifyPropertyChangedFor(nameof(IsAnyMultiColorMode))]
+    [NotifyPropertyChangedFor(nameof(MaxColorCount))]
     public partial bool IsBlackwellRgb { get; set; }
 
     /// <summary>Show the legacy RGB tab until a Blackwell card is detected.</summary>
@@ -254,6 +387,166 @@ public partial class MainViewModel : ViewModelBase
 
     /// <summary>True for the Blackwell effects that take multiple colours (Color Shift, Dazzle).</summary>
     public bool IsBlackwellMultiColorMode => SelectedRgbBlackwellMode is "Color Shift" or "Dazzle";
+
+    /// <summary>Multi-colour state for whichever RGB tab is currently shown (legacy or Blackwell).</summary>
+    public bool IsAnyMultiColorMode => IsBlackwellRgb ? IsBlackwellMultiColorMode : IsMultiColorMode;
+
+    /// <summary>Most colours the active protocol accepts for the current effect (single-colour effects allow one).</summary>
+    public int MaxColorCount => IsAnyMultiColorMode
+        ? (IsBlackwellRgb ? RgbFusion2Blackwell.MaxColors : LegacyMaxColors)
+        : 1;
+
+    /// <summary>Legacy Color Shift carries four two-colour banks per zone.</summary>
+    private const int LegacyMaxColors = 8;
+
+    public bool CanAddColor => IsAnyMultiColorMode && RgbColorList.Count < MaxColorCount;
+
+    public bool CanRemoveColor => RgbColorList.Count > 1;
+
+    /// <summary>Banded preview of the colour list (crisp bands mirror the discrete effect colours).</summary>
+    public IBrush RgbPreviewBrush
+    {
+        get
+        {
+            var colors = RgbColorList
+                .Select(i => RgbColor.TryParse(i.Hex, out var c) ? Color.FromRgb(c.R, c.G, c.B) : (Color?)null)
+                .Where(c => c.HasValue)
+                .Select(c => c!.Value)
+                .ToList();
+            if (colors.Count == 0)
+            {
+                return new SolidColorBrush(Colors.Black);
+            }
+            if (colors.Count == 1)
+            {
+                return new SolidColorBrush(colors[0]);
+            }
+            var brush = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+            };
+            for (int i = 0; i < colors.Count; i++)
+            {
+                brush.GradientStops.Add(new GradientStop(colors[i], (double)i / colors.Count));
+                brush.GradientStops.Add(new GradientStop(colors[i], (double)(i + 1) / colors.Count));
+            }
+            return brush;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanAddColor))]
+    private void AddColor()
+    {
+        if (RgbColorList.Count < MaxColorCount)
+        {
+            RgbColorList.Add(new RgbColorItem("00AAFF"));
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRemoveColor))]
+    private void RemoveColor(RgbColorItem? item)
+    {
+        if (item is not null && RgbColorList.Count > 1)
+        {
+            RgbColorList.Remove(item);
+        }
+    }
+
+    partial void OnSelectedRgbModeChanged(string value) => RefreshColorEditor();
+
+    partial void OnSelectedRgbBlackwellModeChanged(string value) => RefreshColorEditor();
+
+    partial void OnIsBlackwellRgbChanged(bool value) => RefreshColorEditor();
+
+    /// <summary>Re-evaluate the colour editor when the effect or protocol changes, trimming any colours the new mode can't carry.</summary>
+    private void RefreshColorEditor()
+    {
+        OnPropertyChanged(nameof(IsAnyMultiColorMode));
+        OnPropertyChanged(nameof(MaxColorCount));
+        while (RgbColorList.Count > MaxColorCount && RgbColorList.Count > 1)
+        {
+            RgbColorList.RemoveAt(RgbColorList.Count - 1);
+        }
+        OnColorListChanged();
+    }
+
+    private void OnRgbColorListChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems is not null)
+        {
+            foreach (RgbColorItem item in e.NewItems)
+            {
+                item.PropertyChanged += OnColorItemChanged;
+            }
+        }
+        if (e.OldItems is not null)
+        {
+            foreach (RgbColorItem item in e.OldItems)
+            {
+                item.PropertyChanged -= OnColorItemChanged;
+            }
+        }
+        OnColorListChanged();
+    }
+
+    private void OnColorItemChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(RgbColorItem.Hex))
+        {
+            OnPropertyChanged(nameof(RgbPreviewBrush));
+        }
+    }
+
+    private void OnColorListChanged()
+    {
+        OnPropertyChanged(nameof(RgbPreviewBrush));
+        OnPropertyChanged(nameof(CanAddColor));
+        OnPropertyChanged(nameof(CanRemoveColor));
+        AddColorCommand.NotifyCanExecuteChanged();
+        RemoveColorCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>Restore the last-applied RGB config; the write-only controller can't be read, so we replay what the app last set.</summary>
+    private void RestoreRgbSettings()
+    {
+        if (Array.IndexOf(RgbModes, _uiSettings.LastRgbMode) >= 0)
+        {
+            SelectedRgbMode = _uiSettings.LastRgbMode;
+        }
+        if (Array.IndexOf(RgbBlackwellModes, _uiSettings.LastRgbBlackwellMode) >= 0)
+        {
+            SelectedRgbBlackwellMode = _uiSettings.LastRgbBlackwellMode;
+        }
+        RgbBrightness = Math.Clamp(_uiSettings.LastRgbBrightness, 0, 100);
+        RgbSpeed = Math.Clamp(_uiSettings.LastRgbSpeed, 0, 5);
+
+        var saved = _uiSettings.LastRgbColors;
+        if (saved is { Count: > 0 })
+        {
+            foreach (var item in RgbColorList)
+            {
+                item.PropertyChanged -= OnColorItemChanged;
+            }
+            RgbColorList.Clear();
+            foreach (var hex in saved)
+            {
+                RgbColorList.Add(new RgbColorItem(hex));
+            }
+            OnColorListChanged();
+        }
+    }
+
+    /// <summary>Save the current RGB config so the next launch reflects what the app last applied.</summary>
+    private void PersistRgbSettings()
+    {
+        _uiSettings.LastRgbMode = SelectedRgbMode;
+        _uiSettings.LastRgbBlackwellMode = SelectedRgbBlackwellMode;
+        _uiSettings.LastRgbBrightness = RgbBrightness;
+        _uiSettings.LastRgbSpeed = RgbSpeed;
+        _uiSettings.LastRgbColors = [.. RgbColorList.Select(i => i.Hex)];
+        _uiSettings.Save();
+    }
 
     // ---- commands ----------------------------------------------------------
 
@@ -307,15 +600,16 @@ public partial class MainViewModel : ViewModelBase
         ImagePath = path;
         try
         {
-            // Decode off the UI thread, size-constrained, to avoid blocking or full-resolution allocations for 320-wide preview.
+            // Decode off the UI thread, size-constrained, to avoid blocking or full-resolution allocations for the preview.
             var bitmap = await Task.Run(() =>
             {
                 using var stream = System.IO.File.OpenRead(path);
                 return Bitmap.DecodeToWidth(stream, 640, BitmapInterpolationMode.HighQuality);
             });
-            var previous = PreviewImage;
-            PreviewImage = bitmap;
-            previous?.Dispose();
+            _imageSource?.Dispose();
+            _imageSource = bitmap;
+            SelectedLcdContent = ContentImage;
+            UpdatePreview();
             StatusMessage = $"Loaded {path}";
         }
         catch (Exception e)
@@ -451,6 +745,22 @@ public partial class MainViewModel : ViewModelBase
         if (!string.IsNullOrEmpty(path))
         {
             GifPath = path;
+            try
+            {
+                var frame = await Task.Run(() =>
+                {
+                    using var stream = System.IO.File.OpenRead(path);
+                    return Bitmap.DecodeToWidth(stream, 640, BitmapInterpolationMode.HighQuality);
+                });
+                _gifFirstFrame?.Dispose();
+                _gifFirstFrame = frame;
+                SelectedLcdContent = ContentGif;
+                UpdatePreview();
+            }
+            catch (Exception)
+            {
+                // preview is best-effort; the GIF still sends even if the first frame won't decode for preview
+            }
             StatusMessage = $"Selected GIF: {path}";
         }
     }
@@ -499,17 +809,14 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private Task ApplyRgbAsync()
     {
-        if (!RgbColor.TryParse(RgbColorHex, out var color))
-        {
-            StatusMessage = "Invalid color - use RRGGBB hex.";
-            return Task.CompletedTask;
-        }
+        var color = PrimaryColor();
         var mode = SelectedRgbMode;
         byte brightness = (byte)(Math.Clamp(RgbBrightness, 0, 100) * RgbFusion2.BrightnessMax / 100);
         byte speed = (byte)Math.Clamp(RgbSpeed, RgbFusion2.SpeedSlowest, RgbFusion2.SpeedFastest);
         // The color-bank effects blend several colours; single-colour effects
-        // just use the first. Invalid/blank extra colours are simply skipped.
+        // just use the first.
         RgbColor[] colors = IsMultiColorMode ? CollectRgbColors() : [color];
+        PersistRgbSettings();
         return RunAsync("Applying RGB…", async () =>
         {
             if (mode == "Static")
@@ -520,18 +827,24 @@ public partial class MainViewModel : ViewModelBase
             {
                 await _hw.SetRgbEffectAsync(MapRgbMode(mode), colors, speed, brightness);
             }
-            string colorText = IsMultiColorMode ? $"{colors.Length} colors" : $"#{RgbColorHex}";
+            string colorText = IsMultiColorMode ? $"{colors.Length} colors" : $"#{PrimaryHex}";
             return $"RGB: {mode} {colorText} brightness {RgbBrightness}%.";
         });
     }
 
+    /// <summary>First list colour parsed for single-colour effects; falls back to black.</summary>
+    private RgbColor PrimaryColor()
+        => RgbColor.TryParse(PrimaryHex, out var c) ? c : RgbColor.Black;
+
+    private string PrimaryHex => RgbColorList.Count > 0 ? RgbColorList[0].Hex : "000000";
+
     /// <summary>Ordered list of the valid colours for the multi-colour effects.</summary>
     private RgbColor[] CollectRgbColors()
     {
-        var colors = new List<RgbColor>(3);
-        foreach (var hex in new[] { RgbColorHex, RgbColorHex2, RgbColorHex3 })
+        var colors = new List<RgbColor>(RgbColorList.Count);
+        foreach (var item in RgbColorList)
         {
-            if (RgbColor.TryParse(hex, out var c))
+            if (RgbColor.TryParse(item.Hex, out var c))
             {
                 colors.Add(c);
             }
@@ -549,11 +862,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private Task ApplyRgbBlackwellAsync()
     {
-        if (!RgbColor.TryParse(RgbColorHex, out var color))
-        {
-            StatusMessage = "Invalid color - use RRGGBB hex.";
-            return Task.CompletedTask;
-        }
+        var color = PrimaryColor();
         var modeName = SelectedRgbBlackwellMode;
         var mode = MapBlackwellMode(modeName);
         byte brightness = (byte)Math.Clamp(
@@ -562,6 +871,7 @@ public partial class MainViewModel : ViewModelBase
         byte speed = (byte)Math.Clamp(RgbSpeed + 1,
             RgbFusion2Blackwell.SpeedSlowest, RgbFusion2Blackwell.SpeedFastest);
         RgbColor[] colors = IsBlackwellMultiColorMode ? CollectRgbColors() : [color];
+        PersistRgbSettings();
         return RunAsync("Applying RGB…", async () =>
         {
             if (mode == RgbBlackwellMode.Static)
@@ -572,7 +882,7 @@ public partial class MainViewModel : ViewModelBase
             {
                 await _hw.SetRgbBlackwellEffectAsync(mode, colors, speed, brightness);
             }
-            string colorText = IsBlackwellMultiColorMode ? $"{colors.Length} colors" : $"#{RgbColorHex}";
+            string colorText = IsBlackwellMultiColorMode ? $"{colors.Length} colors" : $"#{PrimaryHex}";
             return $"RGB: {modeName} {colorText} brightness {RgbBrightness}%.";
         });
     }
@@ -760,7 +1070,12 @@ public partial class MainViewModel : ViewModelBase
         {
             // Timed out or the operation faulted - proceed with shutdown anyway.
         }
-        Dispatcher.UIThread.Post(() => PreviewImage?.Dispose());
+        Dispatcher.UIThread.Post(() =>
+        {
+            PreviewImage?.Dispose();
+            _imageSource?.Dispose();
+            _gifFirstFrame?.Dispose();
+        });
     }
 
     private static RgbMode MapRgbMode(string name) => name switch

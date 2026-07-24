@@ -49,6 +49,9 @@ public partial class App : Application
                 }
             }
             desktop.MainWindow = _window;
+
+            // Auto-connect on launch so the panel status is populated without a manual Refresh.
+            _ = _viewModel.AutoConnectAsync();
         }
 
         base.OnFrameworkInitializationCompleted();

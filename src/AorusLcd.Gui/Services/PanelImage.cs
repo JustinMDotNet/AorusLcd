@@ -17,15 +17,22 @@ public static class PanelImage
         return ToLe565(source);
     }
 
-    /// <summary>Convert an already-loaded bitmap to a 320x170 LE-RGB565 frame.</summary>
-    public static byte[] ToLe565(Bitmap source)
+    /// <summary>Render a source bitmap to the exact 320x170 frame that gets sent. Caller owns disposal.</summary>
+    public static RenderTargetBitmap Render320(Bitmap source)
     {
         var size = new PixelSize(Panel.Width, Panel.Height);
-        using var rtb = new RenderTargetBitmap(size);
+        var rtb = new RenderTargetBitmap(size);
         using (var ctx = rtb.CreateDrawingContext())
         {
             ctx.DrawImage(source, new Rect(0, 0, Panel.Width, Panel.Height));
         }
+        return rtb;
+    }
+
+    /// <summary>Convert an already-loaded bitmap to a 320x170 LE-RGB565 frame.</summary>
+    public static byte[] ToLe565(Bitmap source)
+    {
+        using var rtb = Render320(source);
         return PanelRender.ToLe565(rtb);
     }
 }

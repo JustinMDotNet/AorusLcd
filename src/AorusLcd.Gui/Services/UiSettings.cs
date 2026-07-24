@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -10,6 +11,21 @@ public sealed class UiSettings
 {
     /// <summary>Whether the system-tray icon is shown. When false, closing the window exits the GUI.</summary>
     public bool ShowTrayIcon { get; set; } = true;
+
+    /// <summary>Last-applied legacy RGB effect name; restored on launch (the card can't be read back).</summary>
+    public string LastRgbMode { get; set; } = "Static";
+
+    /// <summary>Last-applied Blackwell RGB effect name; restored on launch.</summary>
+    public string LastRgbBlackwellMode { get; set; } = "Static";
+
+    /// <summary>Last-applied RGB colour list as RRGGBB hex; the first entry is the primary colour.</summary>
+    public List<string> LastRgbColors { get; set; } = ["FF6600"];
+
+    /// <summary>Last-applied RGB brightness percent (0..100).</summary>
+    public int LastRgbBrightness { get; set; } = 100;
+
+    /// <summary>Last-applied RGB speed step (0..5).</summary>
+    public int LastRgbSpeed { get; set; } = 2;
 
     private static string DefaultPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
