@@ -67,7 +67,7 @@
                     <StackPanel>
                         <!-- Device -->
                         <Border Classes="card">
-                            <Grid ColumnDefinitions="*,*,*,*" RowDefinitions="Auto,Auto">
+                            <Grid ColumnDefinitions="*,*,*,*">
                                 <StackPanel Grid.Column="0">
                                     <TextBlock Classes="label" Text="GPU" />
                                     <TextBlock Text="{Binding GpuName}" FontWeight="SemiBold" TextWrapping="Wrap" />
@@ -84,19 +84,18 @@
                                     <TextBlock Classes="label" Text="Mode" />
                                     <TextBlock Text="{Binding CurrentMode}" FontWeight="SemiBold" />
                                 </StackPanel>
-                                <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="10" Margin="0,14,0,0">
-                                    <Button Content="Panel On" Command="{Binding PanelOnCommand}" IsEnabled="{Binding IsNotBusy}" />
-                                    <Button Content="Panel Off" Command="{Binding PanelOffCommand}" IsEnabled="{Binding IsNotBusy}" />
-                                    <Button Content="💾 Save to panel" Command="{Binding SaveToPanelCommand}" IsEnabled="{Binding IsNotBusy}" />
-                                </StackPanel>
                             </Grid>
                         </Border>
                         <Border Classes="card">
                             <StackPanel>
-                                <TextBlock Classes="h2" Text="Startup" />
+                                <TextBlock Classes="h2" Text="Startup &amp; tray" />
                                 <CheckBox Content="Start with Windows (launch minimized to tray)"
                                           IsChecked="{Binding StartWithWindows}"
                                           IsEnabled="{Binding StartupSupported}" />
+                                <CheckBox Content="Show system-tray icon"
+                                          IsChecked="{Binding ShowTrayIcon}" Margin="0,6,0,0" />
+                                <TextBlock Classes="label" FontSize="11" TextWrapping="Wrap" Margin="24,2,0,0"
+                                           Text="Uncheck to run service-only: closing the window then exits the app while the background service keeps updating the dashboard." />
                             </StackPanel>
                         </Border>
                         <Border Classes="card" IsVisible="{Binding ServiceSupported}">
@@ -134,6 +133,20 @@
             <TabItem Header="LCD Panel" FontSize="14">
                 <ScrollViewer Padding="0,12">
                     <StackPanel>
+
+                <!-- Panel power -->
+                <Border Classes="card">
+                    <StackPanel>
+                        <TextBlock Classes="h2" Text="Panel Power" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Content="Panel On" Command="{Binding PanelOnCommand}" IsEnabled="{Binding IsNotBusy}" />
+                            <Button Content="Panel Off" Command="{Binding PanelOffCommand}" IsEnabled="{Binding IsNotBusy}" />
+                            <Button Content="💾 Save to panel" Command="{Binding SaveToPanelCommand}" IsEnabled="{Binding IsNotBusy}" />
+                        </StackPanel>
+                        <TextBlock Classes="label" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap"
+                                   Text="Turn the LCD on or off, or persist the current content/config to the panel's NVRAM so it survives a reboot." />
+                    </StackPanel>
+                </Border>
 
                 <!-- Image -->
                 <Border Classes="card">
