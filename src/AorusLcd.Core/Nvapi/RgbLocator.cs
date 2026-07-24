@@ -3,46 +3,80 @@ using AorusLcd.Core.Rgb;
 
 namespace AorusLcd.Core.Nvapi;
 
-/// <summary>Finds the Aorus RGB controller only on the LCD-verified GPU, probing 0x71/0x75 with harmless 0xAB write-ACK.</summary>
+/// <summary>Which GPU RGB Fusion 2 protocol a card speaks: legacy 8-byte (pre-Blackwell) or 64-byte Blackwell (RTX 50-series).</summary>
+public enum RgbControllerKind
+{
+    Legacy,
+    Blackwell,
+}
+
+/// <summary>Locates the Aorus GPU RGB controller on the verified Aorus card (LCD answers 0x61) at a documented address (0x71/0x75).</summary>
 [SupportedOSPlatform("windows")]
 public static class RgbLocator
 {
     private const byte Port = 1;
-    private static readonly byte[] CandidateAddresses = [0x71, 0x75];
+    private const byte BlackwellAddress = 0x75;
+    private const byte LegacyAddress = 0x71;
 
-    /// <summary>Find the RGB controller on the verified Aorus GPU, or null.</summary>
-    public static (RgbFusion2Controller Controller, string GpuName, byte Address)? Locate()
+    /// <summary>Classify a GPU by name: RTX 50-series desktop (5050-5090) uses the Blackwell protocol; everything else the legacy one.</summary>
+    public static RgbControllerKind ClassifyByName(string? gpuName)
+    {
+        if (string.IsNullOrEmpty(gpuName))
+        {
+            return RgbControllerKind.Legacy;
+        }
+        // Match "RTX 50X0" with X in 5..9 (5050/5060/5070/5080/5090) so the
+        // workstation "RTX 5000" (Ada/Turing) is not misread as 50-series.
+        var n = gpuName.ToUpperInvariant().Replace(" ", "");
+        int i = n.IndexOf("RTX50", StringComparison.Ordinal);
+        if (i >= 0)
+        {
+            int tens = i + 5;
+            if (tens + 1 < n.Length && n[tens] is >= '5' and <= '9' && n[tens + 1] == '0')
+            {
+                return RgbControllerKind.Blackwell;
+            }
+        }
+        return RgbControllerKind.Legacy;
+    }
+
+    /// <summary>
+    /// Find the RGB controller bus on the verified Aorus GPU. Each address is
+    /// probed with its own protocol (0x75 = Blackwell, 0x71 = legacy) so a
+    /// 64-byte Blackwell probe is never sent to the legacy address; the GPU name
+    /// only decides which to try first. Self-correcting - it returns whatever
+    /// protocol the hardware actually answers - or null if nothing responds.
+    /// </summary>
+    public static (RgbControllerKind Kind, NvApiI2cBus Bus, string GpuName, byte Address)? LocateBus()
     {
         foreach (var gpu in AorusGpus())
         {
-            foreach (byte addr in CandidateAddresses)
+            string name = NvApi.GetFullName(gpu);
+            foreach (var (addr, kind) in CandidateOrder(ClassifyByName(name)))
             {
-                var controller = new RgbFusion2Controller(new NvApiI2cBus(gpu, addr, Port));
-                if (controller.Detect().Present)
+                var bus = new NvApiI2cBus(gpu, addr, Port);
+                if (Present(bus, kind))
                 {
-                    return (controller, NvApi.GetFullName(gpu), addr);
+                    return (kind, bus, name, addr);
                 }
+                bus.Dispose();
             }
         }
         return null;
     }
 
-    /// <summary>Describe candidate address probes on verified Aorus GPUs.</summary>
-    public static IEnumerable<(string GpuName, byte Address, bool Present, string Detail)> Survey()
-    {
-        foreach (var gpu in AorusGpus())
-        {
-            string name = NvApi.GetFullName(gpu);
-            foreach (byte addr in CandidateAddresses)
-            {
-                bool present = new RgbFusion2Controller(new NvApiI2cBus(gpu, addr, Port)).Detect().Present;
-                yield return (name, addr, present,
-                    present ? "write ACK - usable for control" : "no response");
-            }
-        }
-    }
+    // (address, protocol) pairs to probe, ordered by the name-classified generation.
+    private static (byte Address, RgbControllerKind Kind)[] CandidateOrder(RgbControllerKind classified)
+        => classified == RgbControllerKind.Blackwell
+            ? [(BlackwellAddress, RgbControllerKind.Blackwell), (LegacyAddress, RgbControllerKind.Legacy)]
+            : [(LegacyAddress, RgbControllerKind.Legacy), (BlackwellAddress, RgbControllerKind.Blackwell)];
 
-    /// <summary>LCD-verified Aorus GPUs whose 0x61 controller answers status; gates RGB writes to the correct card.</summary>
+    private static bool Present(NvApiI2cBus bus, RgbControllerKind kind)
+        => kind == RgbControllerKind.Blackwell
+            ? new RgbFusion2BlackwellController(bus).Detect()
+            : new RgbFusion2Controller(bus).Detect().Present;
+
+    /// <summary>GPUs confirmed as the Aorus LCD card (0x61 answers), gating RGB writes to the correct card.</summary>
     private static IEnumerable<IntPtr> AorusGpus()
     {
         foreach (var gpu in NvApi.EnumPhysicalGpus())

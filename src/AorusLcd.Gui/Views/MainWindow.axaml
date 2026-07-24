@@ -274,10 +274,10 @@
                 </ScrollViewer>
             </TabItem>
 
-            <TabItem Header="RGB Lighting" FontSize="14">
+            <TabItem Header="RGB Lighting" FontSize="14" IsVisible="{Binding ShowLegacyRgb}">
                 <ScrollViewer Padding="0,12">
                     <StackPanel>
-                        <!-- RGB -->
+                        <!-- RGB (legacy 8-byte controller: pre-Blackwell cards) -->
                         <Border Classes="card">
                     <StackPanel>
                         <TextBlock Classes="h2" Text="RGB Lighting" />
@@ -317,6 +317,55 @@
                         </StackPanel>
                     </StackPanel>
                 </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="RGB Lighting" FontSize="14" IsVisible="{Binding ShowBlackwellRgb}">
+                <ScrollViewer Padding="0,12">
+                    <StackPanel>
+                        <!-- RGB (Blackwell 64-byte controller: RTX 50-series cards) -->
+                        <Border Classes="card">
+                            <StackPanel>
+                                <TextBlock Classes="h2" Text="RGB Lighting" />
+                                <TextBlock Classes="label" FontSize="11" Margin="0,0,0,10"
+                                           Text="RTX 50-series (Blackwell) RGB Fusion 2 controller." />
+                                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                                    <TextBlock Classes="label" Grid.Row="0" Grid.Column="0" Text="Effect" Margin="0,0,12,8" />
+                                    <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding RgbBlackwellModes}"
+                                              SelectedItem="{Binding SelectedRgbBlackwellMode}" HorizontalAlignment="Left" Width="200" Margin="0,0,0,8" />
+
+                                    <TextBlock Classes="label" Grid.Row="1" Grid.Column="0" Text="Color (RRGGBB)" Margin="0,0,12,8" />
+                                    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
+                                        <TextBox Text="{Binding RgbColorHex}" Width="120" />
+                                        <ColorPicker Color="{Binding RgbColorHex, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
+                                                     IsAlphaEnabled="False" VerticalAlignment="Center" />
+                                        <TextBlock Classes="label" Text="+" VerticalAlignment="Center" IsVisible="{Binding IsBlackwellMultiColorMode}" />
+                                        <ColorPicker Color="{Binding RgbColorHex2, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
+                                                     IsAlphaEnabled="False" VerticalAlignment="Center" IsVisible="{Binding IsBlackwellMultiColorMode}" />
+                                        <ColorPicker Color="{Binding RgbColorHex3, Mode=TwoWay, Converter={x:Static conv:HexColorConverter.Instance}}"
+                                                     IsAlphaEnabled="False" VerticalAlignment="Center" IsVisible="{Binding IsBlackwellMultiColorMode}" />
+                                    </StackPanel>
+
+                                    <TextBlock Classes="label" Grid.Row="2" Grid.Column="0" Text="Brightness" Margin="0,0,12,8" />
+                                    <Grid Grid.Row="2" Grid.Column="1" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                                        <Slider Minimum="0" Maximum="100" Value="{Binding RgbBrightness}" />
+                                        <TextBlock Grid.Column="1" Classes="label" Text="{Binding RgbBrightness}" Width="36" TextAlignment="Right" />
+                                    </Grid>
+
+                                    <TextBlock Classes="label" Grid.Row="3" Grid.Column="0" Text="Speed" Margin="0,0,12,0" />
+                                    <Grid Grid.Row="3" Grid.Column="1" ColumnDefinitions="*,Auto">
+                                        <Slider Minimum="0" Maximum="5" Value="{Binding RgbSpeed}" TickFrequency="1" IsSnapToTickEnabled="True" />
+                                        <TextBlock Grid.Column="1" Classes="label" Text="{Binding RgbSpeed}" Width="36" TextAlignment="Right" />
+                                    </Grid>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,12,0,0">
+                                    <Button Content="Apply RGB" Command="{Binding ApplyRgbBlackwellCommand}"
+                                            Background="#FF7A18" Foreground="White" IsEnabled="{Binding IsNotBusy}" />
+                                    <Button Content="RGB off" Command="{Binding RgbBlackwellOffCommand}" IsEnabled="{Binding IsNotBusy}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

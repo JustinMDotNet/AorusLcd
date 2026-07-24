@@ -40,12 +40,15 @@ quit; only the optional live sensor dashboard needs a tiny background service.
   so it survives a reboot with nothing running.
 - **Panel power** - turn the LCD on or off.
 
-**RGB Fusion 2 lighting** (5 GPU zones)
+**RGB Fusion 2 lighting**
 
-- **9 effects** - static, breathing, color cycle, flash, wave, gradient,
-  color shift, dual flash, tricolor.
-- **Multi-color** - color shift and tricolor take up to three colors; the
-  others take one.
+- **Two protocols, auto-selected by GPU** - the newer **64-byte "Blackwell"**
+  controller for RTX 50-series cards (e.g. the RTX 5090 Master) and the legacy
+  **8-byte** controller (5 zones) for older cards. The GUI shows the matching RGB
+  tab for your card.
+- **Effects** - static, breathing/pulse, color cycle, flash, wave, gradient,
+  color shift, dual/double flash, and more (the exact set depends on the card).
+- **Multi-color** - the color-blend effects take several colors; the others one.
 - **Brightness and speed** controls.
 
 **Application**
@@ -190,8 +193,10 @@ raw block writes (no register address) - the same path OpenRGB uses.
   I2C engine.
 - Panel: 320x170, little-endian RGB565, row-major.
 - Upload: `F2(BEGIN)` → `F1` header → 256-byte chunks → `F2(END)`, then `E5` SetMode.
-- RGB: 8-byte raw block packets (mode header `0x88`, color `0x40`/`0xB0`/`0xB1`,
-  save `0xAA`) across 5 GPU zones.
+- RGB: RTX 50-series (Blackwell) cards use 64-byte packets (`0x12`/`0x16`, save
+  `0x13`); older cards use 8-byte packets (mode `0x88`, color `0x40`/`0xB0`/`0xB1`,
+  save `0xAA`) across 5 zones. The GPU name picks which protocol to probe first;
+  detection then uses whichever controller actually responds.
 
 Before any write, the tool sends the `EB 03` status query and requires a
 read-back, so it never writes to a bus that does not answer.

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using AorusLcd.Core;
+using AorusLcd.Core.Nvapi;
 using AorusLcd.Core.Rgb;
 using AorusLcd.Core.Sensors;
 using AorusLcd.Gui.Models;
@@ -28,6 +29,9 @@ public partial class MainViewModel : ViewModelBase
         RgbModes = ["Static", "Breathing", "Color Cycle", "Flash", "Wave",
             "Gradient", "Color Shift", "Dual Flash", "Tricolor"];
         SelectedRgbMode = RgbModes[0];
+        RgbBlackwellModes = ["Static", "Direct", "Pulse", "Flash", "Double Flash",
+            "Color Cycle", "Wave", "Gradient", "Color Shift", "Dazzle"];
+        SelectedRgbBlackwellMode = RgbBlackwellModes[0];
         StartWithWindows = StartupService.IsEnabled(); // reflect current registry state
         RefreshServiceState();
         StatusMessage = _hw.IsSupportedPlatform
@@ -209,6 +213,29 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial int RgbSpeed { get; set; } = 2;
 
+    // ---- RGB (Blackwell / RTX 50-series) -----------------------------------
+
+    /// <summary>True when the connected GPU is RTX 50-series (Blackwell RGB protocol); drives which RGB tab shows.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowLegacyRgb))]
+    [NotifyPropertyChangedFor(nameof(ShowBlackwellRgb))]
+    public partial bool IsBlackwellRgb { get; set; }
+
+    /// <summary>Show the legacy RGB tab until a Blackwell card is detected.</summary>
+    public bool ShowLegacyRgb => !IsBlackwellRgb;
+
+    /// <summary>Show the Blackwell RGB tab for RTX 50-series cards.</summary>
+    public bool ShowBlackwellRgb => IsBlackwellRgb;
+
+    public string[] RgbBlackwellModes { get; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsBlackwellMultiColorMode))]
+    public partial string SelectedRgbBlackwellMode { get; set; }
+
+    /// <summary>True for the Blackwell effects that take multiple colours (Color Shift, Dazzle).</summary>
+    public bool IsBlackwellMultiColorMode => SelectedRgbBlackwellMode is "Color Shift" or "Dazzle";
+
     // ---- commands ----------------------------------------------------------
 
     [RelayCommand]
@@ -216,9 +243,11 @@ public partial class MainViewModel : ViewModelBase
     {
         var gpuName = await _hw.ConnectAsync();
         var status = await _hw.GetStatusAsync();
+        var rgbKind = await DetectRgbKindAsync(gpuName);
         Dispatcher.UIThread.Post(() =>
         {
             GpuName = gpuName;
+            IsBlackwellRgb = rgbKind == RgbControllerKind.Blackwell;
             Firmware = status.FirmwareVersion;
             PanelState = status.IsOn ? "On" : "Off";
             CurrentMode = $"{(int)status.Mode} ({status.Mode})";
@@ -227,6 +256,22 @@ public partial class MainViewModel : ViewModelBase
         });
         return $"Connected: {gpuName} - firmware {status.FirmwareVersion}, mode {status.Mode}.";
     });
+
+    /// <summary>Prefer the hardware-detected RGB generation; fall back to the GPU name when RGB can't be located.</summary>
+    private async Task<RgbControllerKind> DetectRgbKindAsync(string gpuName)
+    {
+        try
+        {
+            var (_, _, kind) = await _hw.ConnectRgbAsync();
+            return kind;
+        }
+        catch (Exception e) when (e is HardwareUnavailableException or NvApiException)
+        {
+            // RGB not reachable (no controller, or not on Windows): fall back to
+            // the name-classified generation. Unexpected exceptions still surface.
+            return _hw.RgbKind ?? RgbLocator.ClassifyByName(gpuName);
+        }
+    }
 
     [RelayCommand]
     private async Task BrowseImageAsync()
@@ -482,6 +527,44 @@ public partial class MainViewModel : ViewModelBase
         return "RGB off.";
     });
 
+    [RelayCommand]
+    private Task ApplyRgbBlackwellAsync()
+    {
+        if (!RgbColor.TryParse(RgbColorHex, out var color))
+        {
+            StatusMessage = "Invalid color - use RRGGBB hex.";
+            return Task.CompletedTask;
+        }
+        var modeName = SelectedRgbBlackwellMode;
+        var mode = MapBlackwellMode(modeName);
+        byte brightness = (byte)Math.Clamp(
+            (int)Math.Round(Math.Clamp(RgbBrightness, 0, 100) / 100.0 * RgbFusion2Blackwell.BrightnessMax),
+            RgbFusion2Blackwell.BrightnessMin, RgbFusion2Blackwell.BrightnessMax);
+        byte speed = (byte)Math.Clamp(RgbSpeed + 1,
+            RgbFusion2Blackwell.SpeedSlowest, RgbFusion2Blackwell.SpeedFastest);
+        RgbColor[] colors = IsBlackwellMultiColorMode ? CollectRgbColors() : [color];
+        return RunAsync("Applying RGB…", async () =>
+        {
+            if (mode == RgbBlackwellMode.Static)
+            {
+                await _hw.SetRgbBlackwellStaticAsync(color, brightness);
+            }
+            else
+            {
+                await _hw.SetRgbBlackwellEffectAsync(mode, colors, speed, brightness);
+            }
+            string colorText = IsBlackwellMultiColorMode ? $"{colors.Length} colors" : $"#{RgbColorHex}";
+            return $"RGB: {modeName} {colorText} brightness {RgbBrightness}%.";
+        });
+    }
+
+    [RelayCommand]
+    private Task RgbBlackwellOffAsync() => RunAsync("Turning RGB off…", async () =>
+    {
+        await _hw.RgbBlackwellOffAsync();
+        return "RGB off.";
+    });
+
     // ---- background service commands ---------------------------------------
 
     [RelayCommand]
@@ -672,6 +755,20 @@ public partial class MainViewModel : ViewModelBase
         "Dual Flash" => RgbMode.DualFlashing,
         "Tricolor" => RgbMode.Tricolor,
         _ => RgbMode.Static,
+    };
+
+    private static RgbBlackwellMode MapBlackwellMode(string name) => name switch
+    {
+        "Direct" => RgbBlackwellMode.Direct,
+        "Pulse" => RgbBlackwellMode.Breathing,
+        "Flash" => RgbBlackwellMode.Flashing,
+        "Double Flash" => RgbBlackwellMode.DualFlashing,
+        "Color Cycle" => RgbBlackwellMode.ColorCycle,
+        "Wave" => RgbBlackwellMode.Wave,
+        "Gradient" => RgbBlackwellMode.Gradient,
+        "Color Shift" => RgbBlackwellMode.ColorShift,
+        "Dazzle" => RgbBlackwellMode.Dazzle,
+        _ => RgbBlackwellMode.Static,
     };
 
     private static Color SafeColor(string hex, Color fallback)
