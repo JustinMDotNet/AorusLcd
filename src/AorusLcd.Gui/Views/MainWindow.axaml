@@ -89,13 +89,13 @@
                         <Border Classes="card">
                             <StackPanel>
                                 <TextBlock Classes="h2" Text="Startup &amp; tray" />
-                                <CheckBox Content="Start with Windows (launch minimized to tray)"
+                                <CheckBox Content="Start with Windows (launch to the tray or minimized)"
                                           IsChecked="{Binding StartWithWindows}"
                                           IsEnabled="{Binding StartupSupported}" />
                                 <CheckBox Content="Show system-tray icon"
                                           IsChecked="{Binding ShowTrayIcon}" Margin="0,6,0,0" />
                                 <TextBlock Classes="label" FontSize="11" TextWrapping="Wrap" Margin="24,2,0,0"
-                                           Text="Uncheck to run service-only: closing the window then exits the app while the background service keeps updating the dashboard." />
+                                           Text="When the tray icon is shown, closing the window hides it to the tray. When it is off (service-only), closing the window exits the app; the background service keeps updating the dashboard either way." />
                             </StackPanel>
                         </Border>
                         <Border Classes="card" IsVisible="{Binding ServiceSupported}">

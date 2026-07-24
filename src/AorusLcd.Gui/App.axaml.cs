@@ -39,8 +39,14 @@ public partial class App : Application
             if (_startMinimized)
             {
                 _window.WindowState = WindowState.Minimized;
-                _window.ShowInTaskbar = false;
-                _window.Opened += OnFirstOpenHideToTray;
+                // Only vanish to the tray if there is a tray icon to restore from;
+                // with the tray disabled, stay in the taskbar so the minimized
+                // window remains recoverable instead of being lost.
+                if (_viewModel.ShowTrayIcon)
+                {
+                    _window.ShowInTaskbar = false;
+                    _window.Opened += OnFirstOpenHideToTray;
+                }
             }
             desktop.MainWindow = _window;
         }
